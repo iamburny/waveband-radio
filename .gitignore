@@ -1,0 +1,17 @@
+# Reverse-engineering material from third-party apps. Never commit.
+/reverse-engineering/
+
+# Gradle / Android Studio
+.gradle/
+build/
+/local.properties
+/captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db

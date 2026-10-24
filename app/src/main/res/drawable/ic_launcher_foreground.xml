@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple radio-waves glyph on the 108dp adaptive icon canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/ic_launcher_foreground"
+        android:pathData="M54,50a4,4 0,1 1,0 8a4,4 0,1 1,0 -8z" />
+    <path
+        android:strokeColor="@color/ic_launcher_foreground"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M44,44a14,14 0,0 0,0 20M64,44a14,14 0,0 1,0 20M37,37a24,24 0,0 0,0 34M71,37a24,24 0,0 1,0 34" />
+</vector>

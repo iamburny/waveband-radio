@@ -16,7 +16,10 @@ Windows host: use `.\gradlew.bat` from PowerShell (or `./gradlew` from Git Bash)
 ./gradlew connectedDebugAndroidTest     # native decoder tests; needs a running device/emulator
 ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.iamburny.waveband.backend.omri.NativeDecodersTest
 ./gradlew installDebug
+./gradlew bundleRelease                 # app/build/outputs/bundle/release/app-release.aab for Play
 ```
+
+Release signing reads `keystore.properties` in the project root (gitignored; template in `keystore.properties.example`) or the `WAVEBAND_KEYSTORE`, `WAVEBAND_KEYSTORE_PASSWORD`, `WAVEBAND_KEY_ALIAS` and `WAVEBAND_KEY_PASSWORD` environment variables. Without them, release builds are unsigned. The upload key lives outside the repo; never commit a keystore or its passwords. Release builds are shrunk by R8, so JNI-facing classes rely on the keep rules in `app/proguard-rules.pro`. Bump `versionCode` for every Play upload.
 
 Toolchain is pinned in `app/build.gradle.kts`: NDK `27.1.12297006`, CMake `3.22.1`, ABIs arm64-v8a / armeabi-v7a / x86_64 (x86_64 is only for the emulator). Native libraries are linked with 16 KB page alignment.
 

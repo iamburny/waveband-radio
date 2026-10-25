@@ -1,8 +1,24 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+// Release signing comes from keystore.properties in the project root (gitignored) or, failing that,
+// environment variables; blank values count as unset. Without a keystore, release APKs are produced
+// unsigned and bundleRelease fails, because Play rejects unsigned bundles.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
+
+fun signingValue(property: String, envVar: String): String? =
+    keystoreProperties.getProperty(property)?.takeUnless { it.isBlank() }
+        ?: System.getenv(envVar)?.takeUnless { it.isBlank() }
+
+val releaseKeystore = signingValue("storeFile", "WAVEBAND_KEYSTORE")
 
 android {
     namespace = "com.iamburny.waveband"
@@ -11,7 +27,7 @@ android {
 
     defaultConfig {
         applicationId = "com.iamburny.waveband"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
@@ -35,8 +51,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseKeystore)
+                storePassword = signingValue("storePassword", "WAVEBAND_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "WAVEBAND_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "WAVEBAND_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
+            // Ships native symbol tables in the bundle so Play Console can symbolicate native crashes.
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -81,4 +111,14 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+}
+
+tasks.matching { it.name == "bundleRelease" }.configureEach {
+    // Local copy so the action captures a plain value, which the configuration cache can store.
+    val signed = releaseKeystore != null
+    doFirst {
+        if (!signed) {
+            throw GradleException("bundleRelease needs an upload key: set up keystore.properties (see keystore.properties.example).")
+        }
+    }
 }

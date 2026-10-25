@@ -15,3 +15,10 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Release signing secrets
+/keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pfx

@@ -38,9 +38,7 @@ internal class AacDecoder(
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, outputChannels).apply {
             setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(audioSpecificConfig(sampleRate, channels, sbr, ps)))
             setInteger(MediaFormat.KEY_IS_ADTS, 0)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
-            }
+            setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
         }
         codec = createDecoder()
         try {

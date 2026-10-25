@@ -1,4 +1,4 @@
-// JNI wrapper around libmpg123 for DAB's MPEG-1/2 Audio Layer II (com.matt.dabtuner.backend.omri.Mp2Decoder).
+// JNI wrapper around libmpg123 for DAB's MPEG-1/2 Audio Layer II (com.iamburny.waveband.backend.omri.Mp2Decoder).
 
 #include <android/log.h>
 #include <jni.h>
@@ -17,7 +17,7 @@ mpg123_handle* handleOf(jlong handle) {
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_matt_dabtuner_backend_omri_Mp2Decoder_nativeCreate(JNIEnv*, jclass) {
+Java_com_iamburny_waveband_backend_omri_Mp2Decoder_nativeCreate(JNIEnv*, jclass) {
     int error = MPG123_OK;
     mpg123_handle* mh = mpg123_new(nullptr, &error);
     if(mh == nullptr) {
@@ -47,7 +47,7 @@ Java_com_matt_dabtuner_backend_omri_Mp2Decoder_nativeCreate(JNIEnv*, jclass) {
  * Returns the number of PCM bytes written, or -1 on a decoder error.
  */
 JNIEXPORT jint JNICALL
-Java_com_matt_dabtuner_backend_omri_Mp2Decoder_nativeDecode(JNIEnv* env, jclass, jlong handle, jbyteArray input,
+Java_com_iamburny_waveband_backend_omri_Mp2Decoder_nativeDecode(JNIEnv* env, jclass, jlong handle, jbyteArray input,
                                                            jint inputLength, jbyteArray output, jintArray format) {
     mpg123_handle* mh = handleOf(handle);
     if(mh == nullptr || inputLength < 0 || inputLength > env->GetArrayLength(input)) {
@@ -97,7 +97,7 @@ Java_com_matt_dabtuner_backend_omri_Mp2Decoder_nativeDecode(JNIEnv* env, jclass,
 }
 
 JNIEXPORT void JNICALL
-Java_com_matt_dabtuner_backend_omri_Mp2Decoder_nativeRelease(JNIEnv*, jclass, jlong handle) {
+Java_com_iamburny_waveband_backend_omri_Mp2Decoder_nativeRelease(JNIEnv*, jclass, jlong handle) {
     if(mpg123_handle* mh = handleOf(handle)) {
         mpg123_delete(mh);
     }

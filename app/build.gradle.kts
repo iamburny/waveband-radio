@@ -5,12 +5,12 @@ plugins {
 }
 
 android {
-    namespace = "com.matt.dabtuner"
+    namespace = "com.iamburny.waveband"
     compileSdk = 36
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
-        applicationId = "com.matt.dabtuner"
+        applicationId = "com.iamburny.waveband"
         minSdk = 23
         targetSdk = 36
         versionCode = 1

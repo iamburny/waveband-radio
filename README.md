@@ -1,7 +1,7 @@
 # Waveband Radio
 
 An Android radio player, currently DAB/DAB+ via USB tuner sticks: Kotlin, single `app` module, package
-`com.matt.dabtuner`.
+`com.iamburny.waveband`.
 
 Built for a landscape car head unit (1280×720, 160 dpi, steering-wheel media buttons). The UI is
 Jetpack Compose with a nav rail and four screens; stations, favourites, presets and settings are
@@ -64,7 +64,7 @@ Station logos are generated monograms (initials on a colour derived from the ser
 ## Layout
 
 ```
-app/src/main/java/com/matt/dabtuner/
+app/src/main/java/com/iamburny/waveband/
   DabTunerApp.kt            Application; owns the RadioController, database and settings
   RadioController.kt        tuner lifecycle, USB connection, observable RadioState, stations/presets of the
                             active origin, scan bookkeeping, traffic announcement switching

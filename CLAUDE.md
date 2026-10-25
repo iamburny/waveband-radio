@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Waveband Radio: a DAB/DAB+ radio player for USB tuner sticks, targeting an aftermarket Android car head unit. Kotlin, single `app` module, package `com.matt.dabtuner`, native code via NDK/CMake.
+Waveband Radio: a DAB/DAB+ radio player for USB tuner sticks, targeting an aftermarket Android car head unit. Kotlin, single `app` module, package `com.iamburny.waveband`, native code via NDK/CMake.
 
 ## Commands
 
@@ -12,9 +12,9 @@ Windows host: use `.\gradlew.bat` from PowerShell (or `./gradlew` from Git Bash)
 ./gradlew assembleDebug                 # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew lintDebug
 ./gradlew testDebugUnitTest
-./gradlew testDebugUnitTest --tests "com.matt.dabtuner.backend.omri.AudioSpecificConfigTest"
+./gradlew testDebugUnitTest --tests "com.iamburny.waveband.backend.omri.AudioSpecificConfigTest"
 ./gradlew connectedDebugAndroidTest     # native decoder tests; needs a running device/emulator
-./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.matt.dabtuner.backend.omri.NativeDecodersTest
+./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.iamburny.waveband.backend.omri.NativeDecodersTest
 ./gradlew installDebug
 ```
 

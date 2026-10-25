@@ -1,4 +1,4 @@
-// JNI bridge between com.matt.dabtuner.backend.omri.OmriNative and the omri-usb C API.
+// JNI bridge between com.iamburny.waveband.backend.omri.OmriNative and the omri-usb C API.
 
 #include <android/log.h>
 #include <jni.h>
@@ -220,12 +220,12 @@ void cbAnnouncement(void* user, uint8_t clusterId, uint16_t flags, uint8_t subch
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_matt_dabtuner_backend_omri_OmriNative_nativeSetLogging(JNIEnv*, jclass, jboolean enabled) {
+Java_com_iamburny_waveband_backend_omri_OmriNative_nativeSetLogging(JNIEnv*, jclass, jboolean enabled) {
     omri_set_logging(enabled ? 1 : 0);
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_matt_dabtuner_backend_omri_OmriNative_nativeOpen(JNIEnv* env, jclass, jint fd, jstring deviceName,
+Java_com_iamburny_waveband_backend_omri_OmriNative_nativeOpen(JNIEnv* env, jclass, jint fd, jstring deviceName,
                                                           jobject callbacks, jobjectArray infoOut) {
     auto* ctx = new TunerContext();
     if(!lookupMethods(env, callbacks, *ctx)) {
@@ -278,7 +278,7 @@ Java_com_matt_dabtuner_backend_omri_OmriNative_nativeOpen(JNIEnv* env, jclass, j
 }
 
 JNIEXPORT void JNICALL
-Java_com_matt_dabtuner_backend_omri_OmriNative_nativeClose(JNIEnv* env, jclass, jlong handle) {
+Java_com_iamburny_waveband_backend_omri_OmriNative_nativeClose(JNIEnv* env, jclass, jlong handle) {
     TunerContext* ctx = context(handle);
     if(ctx == nullptr) {
         return;
@@ -290,17 +290,17 @@ Java_com_matt_dabtuner_backend_omri_OmriNative_nativeClose(JNIEnv* env, jclass, 
 }
 
 JNIEXPORT void JNICALL
-Java_com_matt_dabtuner_backend_omri_OmriNative_nativeStartScan(JNIEnv*, jclass, jlong handle) {
+Java_com_iamburny_waveband_backend_omri_OmriNative_nativeStartScan(JNIEnv*, jclass, jlong handle) {
     if(TunerContext* ctx = context(handle)) omri_tuner_start_scan(ctx->tuner);
 }
 
 JNIEXPORT void JNICALL
-Java_com_matt_dabtuner_backend_omri_OmriNative_nativeStopScan(JNIEnv*, jclass, jlong handle) {
+Java_com_iamburny_waveband_backend_omri_OmriNative_nativeStopScan(JNIEnv*, jclass, jlong handle) {
     if(TunerContext* ctx = context(handle)) omri_tuner_stop_scan(ctx->tuner);
 }
 
 JNIEXPORT void JNICALL
-Java_com_matt_dabtuner_backend_omri_OmriNative_nativeStartService(JNIEnv*, jclass, jlong handle, jint frequencyKHz,
+Java_com_iamburny_waveband_backend_omri_OmriNative_nativeStartService(JNIEnv*, jclass, jlong handle, jint frequencyKHz,
                                                                   jint ensembleId, jint ensembleEcc, jlong serviceId) {
     if(TunerContext* ctx = context(handle)) {
         omri_tuner_start_service(ctx->tuner, static_cast<uint32_t>(frequencyKHz), static_cast<uint16_t>(ensembleId),
@@ -309,7 +309,7 @@ Java_com_matt_dabtuner_backend_omri_OmriNative_nativeStartService(JNIEnv*, jclas
 }
 
 JNIEXPORT void JNICALL
-Java_com_matt_dabtuner_backend_omri_OmriNative_nativeStopService(JNIEnv*, jclass, jlong handle) {
+Java_com_iamburny_waveband_backend_omri_OmriNative_nativeStopService(JNIEnv*, jclass, jlong handle) {
     if(TunerContext* ctx = context(handle)) omri_tuner_stop_service(ctx->tuner);
 }
 

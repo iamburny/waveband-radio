@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Keep in sync with com.matt.dabtuner.usb.SupportedTuners. IDs are decimal. -->
+<!-- Keep in sync with com.iamburny.waveband.usb.SupportedTuners. IDs are decimal. -->
 <resources>
     <!-- 16C0:05DC USB DAB+ receiver (Raontech-based, shared VOTI ID) -->
     <usb-device vendor-id="5824" product-id="1500" />

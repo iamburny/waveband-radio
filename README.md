@@ -69,9 +69,10 @@ service ID).
   each USB-tuner station on RadioDNS (`0.<SId>.<EId>.<GCC>.dab.radiodns.org`, CNAME then the
   `_radiospi._tcp` SRV record), downloads the broadcaster's `SI.xml` once per refresh, and stores
   one logo per station (scaled to 320 px) in `files/logos`. Logos are refreshed after 25 days, as
-  broadcasters ask for at least monthly; stations without a logo are retried after 7 days, and
-  network failures on the next refresh. Lookups run after the station list settles and when a
-  connection comes up. Ensembles that do not signal their ECC are assumed to be UK (E1) when the
+  broadcasters ask for at least monthly. Stations the broadcaster has no logo for are retried after
+  7 days; when a broadcaster's server fails, the stored logo is kept and the station is retried
+  after 6 hours. Lookups run after the station list settles, when a connection comes up, and
+  hourly; they stop early when RadioDNS itself is unreachable. Ensembles that do not signal their ECC are assumed to be UK (E1) when the
   service ID has the UK country nibble.
 
 ## Layout

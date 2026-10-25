@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -65,14 +66,17 @@ val LocalStationLogos = staticCompositionLocalOf<StationLogos?> { null }
 fun rememberStationLogo(info: DabServiceInfo): ImageBitmap? {
     val logos = LocalStationLogos.current ?: return null
     val available by logos.available.collectAsStateWithLifecycle()
-    val key = remember(info) { RadioDns.logoKey(info) }
-    val version = key?.let { available[it] }
-    // Starts from the memory cache, so a tile that is recreated shows its logo without a flash of the monogram.
-    val cached = remember(key, version) { if (key != null && version != null) logos.cachedBitmap(key, version)?.asImageBitmap() else null }
-    val image by produceState(cached, key, version) {
-        value = if (key != null && version != null) logos.bitmap(key, version)?.asImageBitmap() else null
+    val logoKey = remember(info) { RadioDns.logoKey(info) }
+    val version = logoKey?.let { available[it] }
+    // Keyed, so a tile that switches station never shows the previous station's logo. Starts from
+    // the memory cache, so a recreated tile shows its logo without a flash of the monogram.
+    return key(logoKey, version) {
+        val cached = remember { if (logoKey != null && version != null) logos.cachedBitmap(logoKey, version)?.asImageBitmap() else null }
+        val image by produceState(cached) {
+            if (cached == null && logoKey != null && version != null) value = logos.bitmap(logoKey, version)?.asImageBitmap()
+        }
+        image
     }
-    return image
 }
 
 /** Station tile: the broadcaster's logo when one has been downloaded, else the generated monogram. */

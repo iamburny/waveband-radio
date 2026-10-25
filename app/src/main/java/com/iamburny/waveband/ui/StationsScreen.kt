@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -82,6 +83,18 @@ fun StationsScreen(radio: RadioController, actions: RadioActions) {
         }
     }
 
+    // Kept outside the list so a search without results does not lose the position.
+    val listState = rememberLazyListState()
+    // Scrolls to the playing station, keeping one row above it in view, once the list first has
+    // rows; the saved stations may load after the screen opens.
+    var positioned by rememberSaveable { mutableStateOf(false) }
+    val hasRows = shown.isNotEmpty()
+    LaunchedEffect(hasRows) {
+        if (!hasRows || positioned) return@LaunchedEffect
+        positioned = true
+        if (query == null) listState.scrollToItem((shown.indexOfFirst { it.key == state.current?.key } - 1).coerceAtLeast(0))
+    }
+
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val search = query
@@ -117,13 +130,10 @@ fun StationsScreen(radio: RadioController, actions: RadioActions) {
                 },
             )
         } else {
-            // Opens scrolled to the playing station, keeping one row above it in view.
-            val listState = rememberLazyListState(
-                initialFirstVisibleItemIndex = (shown.indexOfFirst { it.key == state.current?.key } - 1).coerceAtLeast(0),
-            )
             // Each change to the search shows its best matches from the top.
             LaunchedEffect(query) { if (query != null) listState.scrollToItem(0) }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Bottom padding for the keyboard, so every search result can be scrolled into view.
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().imePadding(), state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(shown, key = { it.key }) { station ->
                     val nowPlaying = station.key == state.current?.key
                     val label = state.tunedMetadata?.dynamicLabel?.takeIf { nowPlaying && it.isNotBlank() }

@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.util.Log
 import android.util.LruCache
 import androidx.core.graphics.scale
@@ -13,6 +14,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,10 +36,12 @@ import java.util.Properties
 /**
  * Station logos published by broadcasters through RadioDNS, cached on the device.
  *
- * [refresh] looks up the stations that have no logo yet, or whose logo is older than
- * [REFRESH_AFTER_MS], downloads one logo per station and stores it scaled to fit
- * [ServiceInformation.TARGET_SIZE]. Stations RadioDNS has no logo for are retried after
- * [RETRY_MISSING_AFTER_MS]; network failures are retried on the next refresh.
+ * [refresh] looks up the stations that are due and stores one logo per station, scaled to fit
+ * [ServiceInformation.TARGET_SIZE]. A station is due when it has never been looked up, when its
+ * logo is older than [REFRESH_AFTER_MS], [RETRY_NONE_AFTER_MS] after RadioDNS or the broadcaster
+ * said it has no logo, or [RETRY_FAILED_AFTER_MS] after a broadcaster's server failed. A failed
+ * lookup keeps the logo already stored. When RadioDNS itself cannot be reached the device is
+ * treated as offline: the refresh stops and the remaining stations stay due.
  */
 class StationLogos(context: Context, scope: CoroutineScope) {
 
@@ -47,7 +52,7 @@ class StationLogos(context: Context, scope: CoroutineScope) {
     private val refreshLock = Mutex()
     private val enabled = MutableStateFlow(false)
 
-    // Logo key -> time the lookup ran and whether it found a logo.
+    // Logo key -> when it was last looked up and how that went.
     private val index = HashMap<String, Entry>()
     private val stored = MutableStateFlow<Map<String, Long>>(emptyMap())
     private val bitmaps = object : LruCache<String, Bitmap>(BITMAP_CACHE_BYTES) {
@@ -61,18 +66,31 @@ class StationLogos(context: Context, scope: CoroutineScope) {
     val available: StateFlow<Map<String, Long>> =
         combine(enabled, stored) { on, logos -> if (on) logos else emptyMap() }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
-    /** Whether the device has a network connection. */
+    /**
+     * Whether the default network offers internet access. It is not required to be validated:
+     * some head units' connectivity checks never pass although the internet is reachable. A
+     * connection without working internet makes RadioDNS unreachable, which stops a refresh.
+     */
     val online: Flow<Boolean> = callbackFlow {
+        fun hasInternet(network: Network?) =
+            network?.let(connectivity::getNetworkCapabilities)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+
         val callback = object : ConnectivityManager.NetworkCallback() {
+            // Before Android 8 a new default network is not always followed by a capabilities callback.
             override fun onAvailable(network: Network) {
-                trySend(true)
+                trySend(hasInternet(network))
+            }
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                trySend(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
             }
 
             override fun onLost(network: Network) {
-                trySend(connectivity.activeNetwork != null && connectivity.activeNetwork != network)
+                val next = connectivity.activeNetwork?.takeIf { it != network }
+                trySend(hasInternet(next))
             }
         }
-        trySend(connectivity.activeNetwork != null)
+        trySend(hasInternet(connectivity.activeNetwork))
         connectivity.registerDefaultNetworkCallback(callback)
         awaitClose { connectivity.unregisterNetworkCallback(callback) }
     }.distinctUntilChanged()
@@ -102,79 +120,98 @@ class StationLogos(context: Context, scope: CoroutineScope) {
         runCatching { file(key).readBytes() }.getOrNull()
     }
 
-    /** Looks up and downloads missing or outdated logos for [stations]. */
+    /** Looks up and downloads the due logos of [stations]. */
     suspend fun refresh(stations: List<DabServiceInfo>) = refreshLock.withLock {
         withContext(Dispatchers.IO) { refreshLocked(stations) }
     }
 
     private suspend fun refreshLocked(stations: List<DabServiceInfo>) {
         val now = System.currentTimeMillis()
+        // A station on several multiplexes shares one logo; each multiplex is a separate way to look it up.
         val due = stations
             .mapNotNull { info -> RadioDns.logoKey(info)?.let { it to info } }
-            .distinctBy { it.first }
-            .filter { (key, _) ->
-                val entry = index[key]
-                // A check time in the future comes from a clock that was wrong then or is wrong now.
-                entry == null || entry.checkedAt > now || now - entry.checkedAt > if (entry.found) REFRESH_AFTER_MS else RETRY_MISSING_AFTER_MS
-            }
+            .groupBy({ it.first }, { it.second })
+            .filterKeys { key -> index[key]?.isDue(now) ?: true }
         if (due.isEmpty()) return
         dir.mkdirs()
-        val urls = HashMap<String, String>()
-        val files = HashMap<String, Result<ServiceInformation>>()
-        var networkFailures = 0
-        for ((key, info) in due) {
-            val found = try {
-                fetch(info, key, urls, files)
+        val lookup = Lookup()
+        var offlineFailures = 0
+        for ((key, carriers) in due) {
+            val outcome = try {
+                lookup.logo(key, carriers)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: RadioDnsClient.NotFound) {
-                false
-            } catch (e: IOException) {
-                // Connection problems: unreachable hosts, timeouts, DNS failures.
-                Log.i(TAG, "Logo lookup for ${info.label} failed: ${e.message}")
-                // Without a working connection the rest would fail the same way.
-                if (++networkFailures >= MAX_NETWORK_FAILURES) break
+            } catch (e: Offline) {
+                Log.i(TAG, "RadioDNS unreachable: ${e.cause?.message}")
+                // Every remaining lookup starts with RadioDNS, so they would fail the same way.
+                if (++offlineFailures >= MAX_OFFLINE_FAILURES) break
                 continue
+            } catch (e: RadioDnsClient.NotFound) {
+                Outcome.NONE
             } catch (e: Exception) {
-                Log.w(TAG, "Unusable logo data for ${info.label}", e)
-                false
+                // Cancelling closes open downloads, which then fail; that is not the server's fault.
+                currentCoroutineContext().ensureActive()
+                Log.i(TAG, "Logo lookup for ${carriers.first().label} failed: $e")
+                Outcome.FAILED
             }
-            networkFailures = 0
-            index[key] = Entry(now, found)
-            if (!found && file(key).delete()) stored.update { it - key }
+            offlineFailures = 0
+            index[key] = Entry(now, outcome)
+            if (outcome == Outcome.NONE && file(key).delete()) stored.update { it - key }
             saveIndex()
         }
     }
 
-    /** Fetches the logo of [info]; returns false when the broadcaster publishes none. */
-    private suspend fun fetch(
-        info: DabServiceInfo,
-        key: String,
-        urls: MutableMap<String, String>,
-        files: MutableMap<String, Result<ServiceInformation>>,
-    ): Boolean {
-        val lookupName = RadioDns.lookupName(info) ?: return false
-        val bearer = RadioDns.bearerUri(info) ?: return false
-        val domain = client.broadcasterDomain(lookupName)
-        val url = urls[domain] ?: client.serviceInformationUrl(domain).also { urls[domain] = it }
-        // A broadcaster's SI file lists all its stations, so it is downloaded once per refresh.
-        val si = files.getOrPut(url) {
-            runCatching { client.download(url, MAX_SI_BYTES, ServiceInformation::parse) }
-                .onFailure { if (it is CancellationException) throw it }
-        }.getOrThrow()
-        val logo = si.find(bearer)?.let { ServiceInformation.bestLogo(it.logos) } ?: return false
-        val bytes = client.download(logo.url, MAX_IMAGE_BYTES) { it.readBytes() }
-        val bitmap = decodeScaled(bytes) ?: return false
+    /** Thrown when RadioDNS cannot be reached at all. */
+    private class Offline(cause: IOException) : Exception(cause)
+
+    /** One refresh's lookups, sharing each broadcaster's SPI server and SI file between its stations. */
+    private inner class Lookup {
+        private val urls = HashMap<String, Result<String>>()
+        private val files = HashMap<String, Result<ServiceInformation>>()
+
+        /** Stores the logo for [key], trying each of its [carriers] until RadioDNS knows one. */
+        suspend fun logo(key: String, carriers: List<DabServiceInfo>): Outcome {
+            var notFound: RadioDnsClient.NotFound? = null
+            for (info in carriers) {
+                val lookupName = RadioDns.lookupName(info) ?: continue
+                val bearer = RadioDns.bearerUri(info) ?: continue
+                val domain = try {
+                    client.broadcasterDomain(lookupName)
+                } catch (e: RadioDnsClient.NotFound) {
+                    notFound = e
+                    continue
+                } catch (e: IOException) {
+                    throw Offline(e)
+                }
+                val url = urls.getOrPut(domain) { attempt { client.serviceInformationUrl(domain) } }.getOrThrow()
+                val si = files.getOrPut(url) { attempt { client.download(url, MAX_SI_BYTES, ServiceInformation::parse) } }.getOrThrow()
+                val logo = si.find(bearer)?.let { ServiceInformation.bestLogo(it.logos) } ?: return Outcome.NONE
+                val bytes = client.download(logo.url, MAX_IMAGE_BYTES) { it.readBytes() }
+                val bitmap = decodeScaled(bytes) ?: throw IOException("Unreadable image at ${logo.url}")
+                store(key, bitmap)
+                return Outcome.FOUND
+            }
+            throw notFound ?: RadioDnsClient.NotFound("No RadioDNS name for $key")
+        }
+
+        // Caches failures too, so the stations of a failing broadcaster do not each wait for it.
+        private inline fun <T> attempt(block: () -> T): Result<T> =
+            runCatching(block).onFailure { if (it is CancellationException) throw it }
+    }
+
+    private fun store(key: String, bitmap: Bitmap) {
         val target = file(key)
         val temp = File(dir, "$key.tmp")
-        temp.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
-        bitmap.recycle()
+        try {
+            temp.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
+        } finally {
+            bitmap.recycle()
+        }
         if (!temp.renameTo(target)) {
             temp.delete()
-            throw IllegalStateException("Could not store the logo for ${info.label}")
+            throw IOException("Could not store the logo for $key")
         }
         stored.update { it + (key to target.lastModified()) }
-        return true
     }
 
     /** Decodes [bytes] scaled down to fit [ServiceInformation.TARGET_SIZE] square. */
@@ -204,19 +241,19 @@ class StationLogos(context: Context, scope: CoroutineScope) {
         for (key in properties.stringPropertyNames()) {
             val parts = properties.getProperty(key).split(',')
             val checkedAt = parts.getOrNull(0)?.toLongOrNull() ?: continue
-            val found = parts.getOrNull(1) == "found"
+            val outcome = Outcome.entries.firstOrNull { it.stored == parts.getOrNull(1) } ?: continue
             val f = file(key)
             // A logo whose file has gone is looked up again on the next refresh.
-            if (found && !f.exists()) continue
-            index[key] = Entry(checkedAt, found)
-            if (found) logos[key] = f.lastModified()
+            if (outcome == Outcome.FOUND && !f.exists()) continue
+            index[key] = Entry(checkedAt, outcome)
+            if (outcome != Outcome.NONE && f.exists()) logos[key] = f.lastModified()
         }
         stored.value = logos
     }
 
     private fun saveIndex() {
         val properties = Properties()
-        for ((key, entry) in index) properties.setProperty(key, "${entry.checkedAt},${if (entry.found) "found" else "none"}")
+        for ((key, entry) in index) properties.setProperty(key, "${entry.checkedAt},${entry.outcome.stored}")
         val temp = File(dir, "index.tmp")
         runCatching {
             temp.outputStream().use { properties.store(it, null) }
@@ -224,15 +261,26 @@ class StationLogos(context: Context, scope: CoroutineScope) {
         }.onFailure { Log.w(TAG, "Could not save the logo index", it) }
     }
 
-    private data class Entry(val checkedAt: Long, val found: Boolean)
+    /** How a lookup went: a logo stored, none published, or a broadcaster's server failed. */
+    private enum class Outcome(val stored: String, val retryAfterMs: Long) {
+        FOUND("found", REFRESH_AFTER_MS),
+        NONE("none", RETRY_NONE_AFTER_MS),
+        FAILED("failed", RETRY_FAILED_AFTER_MS),
+    }
+
+    private data class Entry(val checkedAt: Long, val outcome: Outcome) {
+        // A check time in the future comes from a clock that was wrong then or is wrong now.
+        fun isDue(now: Long) = checkedAt > now || now - checkedAt > outcome.retryAfterMs
+    }
 
     private companion object {
         const val TAG = "StationLogos"
         // Broadcasters ask for logos to be refreshed at least monthly.
         const val REFRESH_AFTER_MS = 25L * 24 * 60 * 60 * 1000
-        const val RETRY_MISSING_AFTER_MS = 7L * 24 * 60 * 60 * 1000
-        const val MAX_NETWORK_FAILURES = 3
-        const val MAX_SI_BYTES = 8 * 1024 * 1024
+        const val RETRY_NONE_AFTER_MS = 7L * 24 * 60 * 60 * 1000
+        const val RETRY_FAILED_AFTER_MS = 6L * 60 * 60 * 1000
+        const val MAX_OFFLINE_FAILURES = 3
+        const val MAX_SI_BYTES = 4 * 1024 * 1024
         const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
         const val BITMAP_CACHE_BYTES = 24 * 1024 * 1024
     }

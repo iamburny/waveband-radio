@@ -7,6 +7,8 @@ import android.os.Build
 import android.os.CancellationSignal
 import androidx.annotation.RequiresApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -15,9 +17,10 @@ import java.io.InputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.HttpURLConnection
-import java.net.MalformedURLException
 import java.net.URL
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
@@ -26,8 +29,8 @@ import kotlin.random.Random
 class RadioDnsClient(private val connectivity: ConnectivityManager) {
 
     /**
-     * Thrown when RadioDNS or the broadcaster has nothing usable for a service (no entry, an HTTP
-     * error status, an oversized or malformed answer), as opposed to a network failure.
+     * Thrown when RadioDNS or the broadcaster says there is nothing for a service: no RadioDNS
+     * entry, no SPI server, or HTTP 404/410. Other failures are [IOException]s and may pass.
      */
     class NotFound(message: String) : Exception(message)
 
@@ -50,28 +53,67 @@ class RadioDnsClient(private val connectivity: ConnectivityManager) {
         }
     }
 
-    /** Downloads [url], failing if it is larger than [maxBytes], and hands the body to [read]. */
+    /**
+     * Downloads [url], following up to [MAX_REDIRECTS] redirects (including between http and
+     * https), fails if the body is larger than [maxBytes] or the whole download, redirects
+     * included, takes longer than [DOWNLOAD_DEADLINE_MS], and hands the body to [read].
+     */
     suspend fun <T> download(url: String, maxBytes: Int, read: (InputStream) -> T): T = withContext(Dispatchers.IO) {
-        val parsed = try {
-            URL(url)
-        } catch (e: MalformedURLException) {
-            throw NotFound("Bad URL $url")
-        }
-        val connection = (parsed.openConnection() as HttpURLConnection).apply {
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", USER_AGENT)
+        val active = AtomicReference<HttpURLConnection?>(null)
+        val expired = AtomicBoolean(false)
+        // Closing the connection is the only way to stop blocking reads: on cancellation, or when
+        // the deadline passes.
+        val watchdog = launch {
+            try {
+                delay(DOWNLOAD_DEADLINE_MS)
+            } finally {
+                expired.set(true)
+                active.get()?.disconnect()
+            }
         }
         try {
-            // Redirects between http and https are not followed and arrive here as 3xx.
-            val code = connection.responseCode
-            if (code !in 200..299) throw NotFound("$url: HTTP $code")
-            if (connection.contentLengthLong > maxBytes) throw NotFound("$url is too large")
-            connection.inputStream.use { read(LimitedInputStream(it, maxBytes.toLong())) }
+            fetch(URL(url), maxBytes, read, active, expired)
         } finally {
-            connection.disconnect()
+            watchdog.cancel()
         }
+    }
+
+    private fun <T> fetch(
+        start: URL,
+        maxBytes: Int,
+        read: (InputStream) -> T,
+        active: AtomicReference<HttpURLConnection?>,
+        expired: AtomicBoolean,
+    ): T {
+        var current = start
+        repeat(MAX_REDIRECTS + 1) {
+            val connection = (current.openConnection() as HttpURLConnection).apply {
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", USER_AGENT)
+            }
+            active.set(connection)
+            try {
+                if (expired.get()) throw IOException("Download of $start took too long")
+                val code = connection.responseCode
+                when {
+                    code in 300..399 -> {
+                        val location = connection.getHeaderField("Location") ?: throw IOException("$current: HTTP $code without a location")
+                        current = URL(current, location)
+                        if (current.protocol != "http" && current.protocol != "https") throw IOException("Redirect to $current")
+                        return@repeat
+                    }
+                    code == HttpURLConnection.HTTP_NOT_FOUND || code == HttpURLConnection.HTTP_GONE -> throw NotFound("$current: HTTP $code")
+                    code !in 200..299 -> throw IOException("$current: HTTP $code")
+                }
+                if (connection.contentLengthLong > maxBytes) throw IOException("$current is too large")
+                return connection.inputStream.use { read(LimitedInputStream(it, maxBytes.toLong())) }
+            } finally {
+                connection.disconnect()
+            }
+        }
+        throw IOException("Too many redirects from $start")
     }
 
     private suspend fun query(name: String, type: Int): ByteArray {
@@ -145,12 +187,14 @@ class RadioDnsClient(private val connectivity: ConnectivityManager) {
 
         private fun check(n: Int) {
             count += n
-            if (count > limit) throw NotFound("Download exceeds $limit bytes")
+            if (count > limit) throw IOException("Download exceeds $limit bytes")
         }
     }
 
     private companion object {
         const val TIMEOUT_MS = 10_000
+        const val DOWNLOAD_DEADLINE_MS = 30_000L
+        const val MAX_REDIRECTS = 5
         const val USER_AGENT = "WavebandRadio (RadioDNS logos)"
     }
 }

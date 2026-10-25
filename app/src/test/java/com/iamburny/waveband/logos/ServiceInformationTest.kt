@@ -69,6 +69,21 @@ class ServiceInformationTest {
     }
 
     @Test
+    fun readsLatin1Files() {
+        val latin1 = """<?xml version="1.0" encoding="ISO-8859-1"?><serviceInformation><services><service>""" +
+            """<bearer id="dab:ce1.ce15.c222.0"/></service></services></serviceInformation>"""
+        assertEquals(1, ServiceInformation.parse(latin1.toByteArray(Charsets.ISO_8859_1).inputStream()).services.size)
+    }
+
+    @Test
+    fun rejectsDoctypesInOtherEncodings() {
+        val hostile = """<?xml version="1.0"?><!DOCTYPE x [<!ENTITY e "e">]><serviceInformation/>"""
+        assertEquals(true, runCatching { ServiceInformation.parse(hostile.toByteArray(Charsets.UTF_16LE).inputStream()) }.isFailure)
+        val declared = """<?xml version="1.0" encoding="UTF-16"?><serviceInformation/>"""
+        assertEquals(true, runCatching { ServiceInformation.parse(declared.byteInputStream()) }.isFailure)
+    }
+
+    @Test
     fun rejectsDoctypes() {
         val hostile = """<?xml version="1.0"?><!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><serviceInformation/>"""
         val result = runCatching { ServiceInformation.parse(hostile.byteInputStream()) }

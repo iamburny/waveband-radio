@@ -6,6 +6,8 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-25
+
 ### Added
 
 - Station logos from the broadcasters, through RadioDNS, in the station list, presets, Now Playing
@@ -63,6 +65,7 @@ First test release, published to the Google Play internal testing track.
 - Only one USB tuner type is supported so far.
 - Requires Android 7.0 (API 24) or later.
 
-[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/iamburny/waveband-radio/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/iamburny/waveband-radio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/iamburny/waveband-radio/releases/tag/v0.1.0

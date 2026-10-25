@@ -36,11 +36,16 @@ implementations:
   tap. **Edit** shows a clear button on each preset; tapping a tile then saves the current station
   there.
 - **Settings**: full Band III scan (5A–13F) with progress and a cancel button; traffic
-  announcements; slideshow images; display mode (Auto follows the system's night mode, which head
+  announcements; slideshow images; station logos; display mode (Auto follows the system's night mode, which head
   units usually switch with the headlights; Day; Night); accent colour; region (United Kingdom,
   Band III only); tuner status with connect/disconnect; open-source licences.
 
-Station logos are generated monograms (initials on a colour derived from the service ID).
+The Stations screen has a search field that matches station names, ensembles, programme types and
+blocks, ignoring case, accents, spaces and punctuation.
+
+Station logos come from the broadcasters through RadioDNS when the device is online (see
+Behaviour). Stations without one get a generated monogram (initials on a colour derived from the
+service ID).
 
 ## Behaviour
 
@@ -59,7 +64,15 @@ Station logos are generated monograms (initials on a colour derived from the ser
   current ensemble; announcements on other ensembles are not followed.
 - **Media session**: steering-wheel/media-button next and previous step through the saved
   stations. The session (notification, lock screen, Bluetooth/head-unit displays) shows the
-  station name, the dynamic label, and the slideshow image or the station's monogram as artwork.
+  station name, the dynamic label, and the slideshow image, logo or monogram as artwork.
+- **Station logos**: the only network use. With the setting on (the default), the app looks up
+  each USB-tuner station on RadioDNS (`0.<SId>.<EId>.<GCC>.dab.radiodns.org`, CNAME then the
+  `_radiospi._tcp` SRV record), downloads the broadcaster's `SI.xml` once per refresh, and stores
+  one logo per station (scaled to 320 px) in `files/logos`. Logos are refreshed after 25 days, as
+  broadcasters ask for at least monthly; stations without a logo are retried after 7 days, and
+  network failures on the next refresh. Lookups run after the station list settles and when a
+  connection comes up. Ensembles that do not signal their ECC are assumed to be UK (E1) when the
+  service ID has the UK country nibble.
 
 ## Layout
 
@@ -70,6 +83,8 @@ app/src/main/java/com/iamburny/waveband/
                             active origin, scan bookkeeping, traffic announcement switching
   StationOrder.kt           station orderings, next/previous station and ensemble
   Monogram.kt               generated station logos (initials + colour)
+  StationSearch.kt          station list search matching
+  logos/                    RadioDNS logo lookup (DNS, SI.xml parsing) and the on-device logo cache
   backend/DabBackend.kt     backend contract (open from a UsbDeviceConnection/fd, scan, play, PCM + metadata callbacks)
   backend/ProgrammeType.kt  programme type names and the Music/Talk split
   backend/StubDabBackend.kt demo tuner

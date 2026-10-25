@@ -332,6 +332,10 @@ class RadioController(
         scope.launch { settingsRepository.setSlideshow(enabled) }
     }
 
+    fun setStationLogos(enabled: Boolean) {
+        scope.launch { settingsRepository.setStationLogos(enabled) }
+    }
+
     fun setTrafficAnnouncements(enabled: Boolean) {
         scope.launch { settingsRepository.setTrafficAnnouncements(enabled) }
         if (!enabled) endAnnouncement()

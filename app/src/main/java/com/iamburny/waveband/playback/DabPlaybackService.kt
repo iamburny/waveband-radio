@@ -20,6 +20,7 @@ import com.iamburny.waveband.Monogram
 import com.iamburny.waveband.R
 import com.iamburny.waveband.RadioController
 import com.iamburny.waveband.backend.DabServiceInfo
+import com.iamburny.waveband.logos.RadioDns
 import com.iamburny.waveband.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,7 @@ class DabPlaybackService : MediaSessionService() {
     private lateinit var player: DabPlayer
     private var session: MediaSession? = null
     private var monogramCache: Pair<String, ByteArray>? = null
+    private var logoCache: Pair<String, ByteArray>? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -63,8 +65,9 @@ class DabPlaybackService : MediaSessionService() {
             .setCallback(SessionCallback())
             .build()
 
+        val logos = DabTunerApp.from(this).stationLogos
         scope.launch {
-            combine(radio.state, radio.settings) { state, settings ->
+            combine(radio.state, radio.settings, logos.available) { state, settings, available ->
                 val station = state.current
                 val metadata = state.tunedMetadata
                 val slide = metadata?.slideshowJpegOrPng?.takeIf { settings?.slideshow != false && state.announcement == null }
@@ -72,14 +75,27 @@ class DabPlaybackService : MediaSessionService() {
                     tunerState = state.tunerState,
                     station = station,
                     dynamicLabel = metadata?.dynamicLabel,
-                    artwork = slide ?: station?.let(::monogramArtwork),
+                    artwork = slide ?: station?.let { logoArtwork(it, available) ?: monogramArtwork(it) },
                 )
             }
-                // Rendering the monogram is image work; keep it off the main thread.
+                // Reading the logo and rendering the monogram are image work; keep them off the main thread.
                 .flowOn(Dispatchers.Default)
                 .distinctUntilChanged()
                 .collect(player::onNowPlayingChanged)
         }
+    }
+
+    /**
+     * PNG of the station's downloaded logo, or null if there is none. The same array is returned
+     * while the logo is unchanged, so the session metadata is not republished on every state change.
+     */
+    private suspend fun logoArtwork(station: DabServiceInfo, available: Map<String, Long>): ByteArray? {
+        val key = RadioDns.logoKey(station) ?: return null
+        val version = available[key] ?: return null
+        logoCache?.let { (cachedKey, png) -> if (cachedKey == "$key@$version") return png }
+        val png = DabTunerApp.from(this).stationLogos.png(key) ?: return null
+        logoCache = "$key@$version" to png
+        return png
     }
 
     /** PNG of the station's monogram tile, cached for the current station. Called on a background thread. */

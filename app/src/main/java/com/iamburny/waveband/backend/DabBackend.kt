@@ -85,6 +85,8 @@ data class DabServiceInfo(
     val ensembleId: Int,
     val frequencyKHz: Int,
     val label: String,
+    /** Extended country code of the ensemble (FIG 0/9), 0 if not signalled. */
+    val ensembleEcc: Int = 0,
     val shortLabel: String = "",
     val ensembleLabel: String = "",
     val isDabPlus: Boolean = true,

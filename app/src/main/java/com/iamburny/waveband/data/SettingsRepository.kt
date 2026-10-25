@@ -21,6 +21,8 @@ data class AppSettings(
     val accent: Accent = Accent.AMBER,
     val trafficAnnouncements: Boolean = true,
     val slideshow: Boolean = true,
+    /** Download station logos from broadcasters through RadioDNS. */
+    val stationLogos: Boolean = true,
     val region: Region = Region.UK,
     val lastStationKey: String? = null,
     val lastOrigin: TunerOrigin = TunerOrigin.USB,
@@ -38,6 +40,7 @@ class SettingsRepository(context: Context) {
             accent = p[ACCENT].toEnum(Accent.AMBER),
             trafficAnnouncements = p[TRAFFIC] ?: true,
             slideshow = p[SLIDESHOW] ?: true,
+            stationLogos = p[STATION_LOGOS] ?: true,
             region = p[REGION].toEnum(Region.UK),
             lastStationKey = p[LAST_STATION],
             lastOrigin = p[LAST_ORIGIN].toEnum(TunerOrigin.USB),
@@ -52,6 +55,8 @@ class SettingsRepository(context: Context) {
 
     suspend fun setSlideshow(enabled: Boolean) = store.edit { it[SLIDESHOW] = enabled }
 
+    suspend fun setStationLogos(enabled: Boolean) = store.edit { it[STATION_LOGOS] = enabled }
+
     suspend fun setLastStation(origin: TunerOrigin, key: String) = store.edit {
         it[LAST_ORIGIN] = origin.name
         it[LAST_STATION] = key
@@ -64,6 +69,7 @@ class SettingsRepository(context: Context) {
         val ACCENT = stringPreferencesKey("accent")
         val TRAFFIC = booleanPreferencesKey("traffic_announcements")
         val SLIDESHOW = booleanPreferencesKey("slideshow")
+        val STATION_LOGOS = booleanPreferencesKey("station_logos")
         val REGION = stringPreferencesKey("region")
         val LAST_STATION = stringPreferencesKey("last_station")
         val LAST_ORIGIN = stringPreferencesKey("last_origin")

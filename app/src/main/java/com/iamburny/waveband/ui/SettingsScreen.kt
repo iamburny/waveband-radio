@@ -74,6 +74,12 @@ fun SettingsScreen(
                     radio::setTrafficAnnouncements,
                 )
                 ToggleRow("Slideshow images", "Show station artwork on Now Playing", settings.slideshow, radio::setSlideshow)
+                ToggleRow(
+                    "Station logos",
+                    "Downloads logos from broadcasters over the internet",
+                    settings.stationLogos,
+                    radio::setStationLogos,
+                )
                 SettingRow("Display") {
                     Segmented {
                         for (mode in DisplayMode.entries) {

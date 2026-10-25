@@ -6,6 +6,17 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Station logos from the broadcasters, through RadioDNS, in the station list, presets, Now Playing
+  and the media notification. They download when the head unit is online, refresh monthly, and can
+  be switched off under Settings → Station logos. Stations without a logo keep their generated tile.
+- Search on the Stations screen, by station name, multiplex, programme type or block.
+
+### Changed
+
+- The app now uses the internet, only to look up and download station logos.
+
 ## [0.1.1] - 2026-10-25
 
 ### Fixed

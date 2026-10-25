@@ -74,5 +74,6 @@ object DabIcons {
     val Chevron = icon("Chevron", Layer("M9 5l7 7-7 7", stroke = 2.4f))
     val Back = icon("Back", Layer("M15 5l-7 7 7 7", stroke = 2.4f))
     val Close = icon("Close", Layer("M6 6l12 12M18 6L6 18", stroke = 2.4f))
+    val Search = icon("Search", Layer(circle(10.5f, 10.5f, 6.5f) + "M15.5 15.5L20.5 20.5", stroke = 2.4f))
     val Check = icon("Check", Layer("M5 12.5l4.5 4.5L19 7.5", stroke = 2.6f))
 }

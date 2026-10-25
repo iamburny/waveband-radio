@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,7 +73,9 @@ fun DabApp(radio: RadioController, settings: AppSettings, playWhenReady: Boolean
     BackHandler(enabled = !showLicences && screen != Screen.PLAYING) { screen = Screen.PLAYING }
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
-        DesignScale(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        // The keyboard is left out of the insets: it covers the bottom of the screen instead of
+        // shrinking the scaled layout.
+        DesignScale(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))) {
             Row(Modifier.fillMaxSize()) {
                 NavRail(screen) {
                     showLicences = false

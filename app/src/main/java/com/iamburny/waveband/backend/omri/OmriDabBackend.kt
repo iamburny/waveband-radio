@@ -215,6 +215,7 @@ class OmriDabBackend(private val verboseNativeLogging: Boolean = false) : DabBac
                 ensembleId = ensembleId,
                 frequencyKHz = frequencyKHz,
                 label = label.decodeToString().trim(),
+                ensembleEcc = ensembleEcc and 0xFF,
                 shortLabel = shortLabel.decodeToString().trim(),
                 ensembleLabel = ensembleLabel.decodeToString().trim(),
                 isDabPlus = audioCodec == OmriNative.CODEC_AAC,

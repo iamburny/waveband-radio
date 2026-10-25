@@ -1,22 +1,28 @@
 package com.iamburny.waveband.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,17 +30,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iamburny.waveband.RadioController
 import com.iamburny.waveband.StationOrder
+import com.iamburny.waveband.StationSearch
 import com.iamburny.waveband.backend.ProgrammeType
 import com.iamburny.waveband.data.Station
 import com.iamburny.waveband.ui.theme.Dab
@@ -50,12 +62,17 @@ fun StationsScreen(radio: RadioController, actions: RadioActions) {
     val state by radio.state.collectAsStateWithLifecycle()
     val alphabetical by radio.alphabetical.collectAsStateWithLifecycle()
     var filter by rememberSaveable { mutableStateOf(StationFilter.ALL) }
+    // Null while the search field is closed. A search covers all stations, whatever the filter.
+    var query by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(enabled = query != null) { query = null }
 
-    val shown = remember(stations, filter, alphabetical) {
+    val shown = remember(stations, filter, alphabetical, query) {
         val byKey = stations.associateBy { it.key }
         val infos = stations.map { it.info }
         val ordered = if (alphabetical) StationOrder.alphabetical(infos) else StationOrder.byEnsemble(infos)
+        val search = query
         ordered.mapNotNull { byKey[it.key] }.filter { s ->
+            if (search != null) return@filter StationSearch.matches(s.info, search)
             when (filter) {
                 StationFilter.ALL -> true
                 StationFilter.FAVOURITES -> s.favourite
@@ -67,19 +84,34 @@ fun StationsScreen(radio: RadioController, actions: RadioActions) {
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ScreenTitle("Stations")
-            Text("${stations.size} found", style = dabText(20), color = c.muted, maxLines = 1, modifier = Modifier.padding(start = 12.dp, end = 8.dp))
-            Spacer(Modifier.weight(1f))
-            for (f in StationFilter.entries) {
-                FilterChip(f.label, selected = filter == f) { filter = f }
+            val search = query
+            if (search != null) {
+                SearchField(search, onChange = { query = it }, modifier = Modifier.weight(1f))
+                DabIconButton(DabIcons.Close, "Close search", size = 64.dp, iconSize = 28.dp, background = c.chip, tint = c.text) { query = null }
+            } else {
+                ScreenTitle("Stations")
+                // Gives way first when the chips need the room.
+                Text(
+                    "${stations.size} found",
+                    style = dabText(20),
+                    color = c.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(start = 12.dp, end = 8.dp),
+                )
+                DabIconButton(DabIcons.Search, "Search stations", size = 64.dp, iconSize = 30.dp, background = c.chip, tint = c.text) { query = "" }
+                for (f in StationFilter.entries) {
+                    FilterChip(f.label, selected = filter == f) { filter = f }
+                }
+                FilterChip("A–Z", selected = alphabetical) { radio.setAlphabetical(!alphabetical) }
             }
-            FilterChip("A–Z", selected = alphabetical) { radio.setAlphabetical(!alphabetical) }
         }
         if (shown.isEmpty()) {
             EmptyStations(
                 message = when {
                     stations.isEmpty() && state.scan != null -> "Scanning… stations appear here as they are found."
                     stations.isEmpty() -> "No stations yet. Connect the tuner and run a full scan in Settings."
+                    query != null -> "No stations match “${query?.trim()}”."
                     filter == StationFilter.FAVOURITES -> "No favourites yet. Tap the heart on a station to add it."
                     else -> "No ${filter.label.lowercase()} stations found."
                 },
@@ -89,6 +121,8 @@ fun StationsScreen(radio: RadioController, actions: RadioActions) {
             val listState = rememberLazyListState(
                 initialFirstVisibleItemIndex = (shown.indexOfFirst { it.key == state.current?.key } - 1).coerceAtLeast(0),
             )
+            // Each change to the search shows its best matches from the top.
+            LaunchedEffect(query) { if (query != null) listState.scrollToItem(0) }
             LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(shown, key = { it.key }) { station ->
                     val nowPlaying = station.key == state.current?.key
@@ -100,6 +134,37 @@ fun StationsScreen(radio: RadioController, actions: RadioActions) {
             }
         }
     }
+}
+
+@Composable
+private fun SearchField(query: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val c = Dab.colors
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    BasicTextField(
+        value = query,
+        onValueChange = onChange,
+        singleLine = true,
+        textStyle = dabText(24, FontWeight.SemiBold).copy(color = c.text),
+        cursorBrush = SolidColor(c.accent),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+        modifier = modifier.height(64.dp).focusRequester(focus),
+        decorationBox = { field ->
+            Row(
+                Modifier.fillMaxSize().background(c.chip, CircleShape).padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(DabIcons.Search, contentDescription = null, tint = c.muted, modifier = Modifier.size(30.dp))
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) Text("Search stations", style = dabText(24, FontWeight.SemiBold), color = c.muted, maxLines = 1)
+                    field()
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -138,7 +203,7 @@ private fun StationRow(station: Station, nowPlaying: Boolean, dynamicLabel: Stri
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        MonogramTile(info.serviceId, info.label, size = 72.dp, corner = 16.dp, fontSize = 26)
+        StationTile(info, size = 72.dp, corner = 16.dp, fontSize = 26)
         Column(Modifier.weight(1f)) {
             Text(info.label, style = dabText(30, FontWeight.ExtraBold), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val detail = dynamicLabel ?: ProgrammeType.name(info.programmeType) ?: "Block ${info.channelLabel}"

@@ -112,9 +112,10 @@ private fun StatusRow(state: RadioState, service: DabServiceInfo) {
 private fun Artwork(state: RadioState, service: DabServiceInfo, slideshowEnabled: Boolean) {
     val c = Dab.colors
     val bytes = state.tunedMetadata?.slideshowJpegOrPng?.takeIf { slideshowEnabled && state.announcement == null }
-    val image by produceState<ImageBitmap?>(null, bytes) {
+    val slide by produceState<ImageBitmap?>(null, bytes) {
         value = bytes?.let { b -> withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap() } }
     }
+    val logo = rememberStationLogo(service)
     val shape = RoundedCornerShape(28.dp)
     Box(
         Modifier
@@ -122,10 +123,10 @@ private fun Artwork(state: RadioState, service: DabServiceInfo, slideshowEnabled
             .aspectRatio(1f)
             .clip(shape)
             .background(c.placeholder)
-            .semantics { contentDescription = if (image != null) "Slideshow image from ${service.label}" else "${service.label} logo" },
+            .semantics { contentDescription = if (slide != null) "Slideshow image from ${service.label}" else "${service.label} logo" },
         contentAlignment = Alignment.Center,
     ) {
-        val img = image
+        val img = slide ?: logo
         if (img != null) {
             Image(img, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
         } else {

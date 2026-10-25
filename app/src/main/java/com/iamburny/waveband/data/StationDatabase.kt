@@ -1,6 +1,8 @@
 package com.iamburny.waveband.data
 
 import android.content.Context
+import androidx.room.AutoMigration
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -21,6 +23,7 @@ data class StationEntity(
     val ensembleId: Int,
     val frequencyKHz: Int,
     val label: String,
+    @ColumnInfo(defaultValue = "0") val ensembleEcc: Int,
     val shortLabel: String,
     val ensembleLabel: String,
     val isDabPlus: Boolean,
@@ -37,6 +40,7 @@ data class StationEntity(
         ensembleId = ensembleId,
         frequencyKHz = frequencyKHz,
         label = label,
+        ensembleEcc = ensembleEcc,
         shortLabel = shortLabel,
         ensembleLabel = ensembleLabel,
         isDabPlus = isDabPlus,
@@ -55,6 +59,7 @@ data class StationEntity(
             ensembleId = info.ensembleId,
             frequencyKHz = info.frequencyKHz,
             label = info.label,
+            ensembleEcc = info.ensembleEcc,
             shortLabel = info.shortLabel,
             ensembleLabel = info.ensembleLabel,
             isDabPlus = info.isDabPlus,
@@ -113,7 +118,11 @@ interface StationDao {
     suspend fun clearPreset(origin: String, slot: Int)
 }
 
-@Database(entities = [StationEntity::class, PresetEntity::class], version = 1)
+@Database(
+    entities = [StationEntity::class, PresetEntity::class],
+    version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
+)
 abstract class StationDatabase : RoomDatabase() {
     abstract fun stations(): StationDao
 

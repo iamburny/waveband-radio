@@ -1,6 +1,7 @@
 package com.iamburny.waveband.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +21,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,10 +33,13 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -40,10 +48,48 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iamburny.waveband.Monogram
+import com.iamburny.waveband.backend.DabServiceInfo
+import com.iamburny.waveband.logos.RadioDns
+import com.iamburny.waveband.logos.StationLogos
 import com.iamburny.waveband.ui.theme.Dab
 import com.iamburny.waveband.ui.theme.OnAccent
 import com.iamburny.waveband.ui.theme.dabText
+
+/** Source of downloaded station logos; null where logos are not available, such as in previews. */
+val LocalStationLogos = staticCompositionLocalOf<StationLogos?> { null }
+
+/** The station's downloaded logo once it has loaded, or null if there is none. */
+@Composable
+fun rememberStationLogo(info: DabServiceInfo): ImageBitmap? {
+    val logos = LocalStationLogos.current ?: return null
+    val available by logos.available.collectAsStateWithLifecycle()
+    val key = remember(info) { RadioDns.logoKey(info) }
+    val version = key?.let { available[it] }
+    // Starts from the memory cache, so a tile that is recreated shows its logo without a flash of the monogram.
+    val cached = remember(key, version) { if (key != null && version != null) logos.cachedBitmap(key, version)?.asImageBitmap() else null }
+    val image by produceState(cached, key, version) {
+        value = if (key != null && version != null) logos.bitmap(key, version)?.asImageBitmap() else null
+    }
+    return image
+}
+
+/** Station tile: the broadcaster's logo when one has been downloaded, else the generated monogram. */
+@Composable
+fun StationTile(info: DabServiceInfo, size: Dp, corner: Dp, fontSize: Int, modifier: Modifier = Modifier) {
+    val logo = rememberStationLogo(info)
+    if (logo != null) {
+        Image(
+            logo,
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = modifier.size(size).clip(RoundedCornerShape(corner)).background(Dab.colors.placeholder),
+        )
+    } else {
+        MonogramTile(info.serviceId, info.label, size, corner, fontSize, modifier)
+    }
+}
 
 /** Generated station logo tile. */
 @Composable

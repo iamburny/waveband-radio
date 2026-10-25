@@ -68,7 +68,9 @@ SDK command-line tools are at `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\b
 - The look is copied exactly from a design canvas at 1280×720 (1 px = 1 dp at 160 dpi). `ui/DesignScale.kt` scales the whole tree uniformly so the 1280×664 dp content area (canvas minus the reference status and navigation bars) fits the window at any density; write layouts in design dp and never read the system density directly. Colours live in `ui/theme/Theme.kt` as night and day token sets with four accents. Don't substitute Material defaults.
 - Display mode Auto follows the system night mode; the activity handles `uiMode` changes itself.
 - The Manrope font is bundled in `res/font` (OFL).
-- Station tiles are generated monograms (`Monogram.kt`) unless the station sends a slideshow image.
+- Station tiles (`StationTile` in `ui/Components.kt`) show the broadcaster's logo from `logos/StationLogos` (provided through `LocalStationLogos`) and fall back to generated monograms (`Monogram.kt`). Now Playing prefers the slideshow image over the logo.
+
+**Station logos.** The app's only network access. `DabTunerApp` drives `StationLogos.refresh` from the USB origin's stations, the setting and connectivity; `RadioDnsClient` resolves the RadioDNS CNAME and `_radiospi._tcp` SRV (raw DNS via `DnsResolver` on API 29+, UDP to the network's DNS server below), and `ServiceInformation` parses `SI.xml`. Logos are keyed by `RadioDns.logoKey` (country code + SId, no ensemble). Cleartext HTTP is allowed (`res/xml/network_security_config.xml`) because many broadcasters' SPI servers are HTTP-only. Keep the privacy policy on bluegreenstudios.co.uk in step with any network use.
 
 **Media session.** Skip next/previous (steering-wheel buttons) steps through the saved stations in the current sort order (`StationOrder.kt`). The session metadata carries the station name, the DLS text and artwork.
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The only network traffic is station logo lookups. Broadcasters' RadioDNS metadata servers are
+    on arbitrary hosts and many serve their SI files and logos over plain HTTP only.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

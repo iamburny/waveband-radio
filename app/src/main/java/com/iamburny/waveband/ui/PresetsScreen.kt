@@ -140,7 +140,7 @@ private fun PresetTile(
                         shape = RoundedCornerShape(14.dp),
                     ) { radio.clearPreset(slot) }
                 } else {
-                    MonogramTile(station.info.serviceId, station.info.label, size = 56.dp, corner = 14.dp, fontSize = 20)
+                    StationTile(station.info, size = 56.dp, corner = 14.dp, fontSize = 20)
                 }
             } else {
                 Box(Modifier.height(56.dp))

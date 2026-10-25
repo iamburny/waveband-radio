@@ -71,24 +71,26 @@ fun DabApp(radio: RadioController, settings: AppSettings, playWhenReady: Boolean
     BackHandler(enabled = !showLicences && screen != Screen.PLAYING) { screen = Screen.PLAYING }
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
-        Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            NavRail(screen) {
-                showLicences = false
-                screen = it
-            }
-            Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 36.dp, vertical = 28.dp)) {
-                if (showLicences) {
-                    LicencesScreen(onClose = { showLicences = false })
-                } else {
-                    when (screen) {
-                        Screen.PLAYING -> NowPlayingScreen(radio, settings, playWhenReady, demoAvailable, actions, onOpenStations = { screen = Screen.STATIONS })
-                        Screen.STATIONS -> StationsScreen(radio, actions)
-                        Screen.PRESETS -> PresetsScreen(radio, actions)
-                        Screen.SETTINGS -> SettingsScreen(radio, settings, demoAvailable, actions, onOpenLicences = { showLicences = true })
-                    }
+        DesignScale(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            Row(Modifier.fillMaxSize()) {
+                NavRail(screen) {
+                    showLicences = false
+                    screen = it
                 }
-                state.lastError?.let { message ->
-                    ErrorBanner(message, onDismiss = radio::clearError, modifier = Modifier.align(Alignment.BottomCenter))
+                Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 36.dp, vertical = 28.dp)) {
+                    if (showLicences) {
+                        LicencesScreen(onClose = { showLicences = false })
+                    } else {
+                        when (screen) {
+                            Screen.PLAYING -> NowPlayingScreen(radio, settings, playWhenReady, demoAvailable, actions, onOpenStations = { screen = Screen.STATIONS })
+                            Screen.STATIONS -> StationsScreen(radio, actions)
+                            Screen.PRESETS -> PresetsScreen(radio, actions)
+                            Screen.SETTINGS -> SettingsScreen(radio, settings, demoAvailable, actions, onOpenLicences = { showLicences = true })
+                        }
+                    }
+                    state.lastError?.let { message ->
+                        ErrorBanner(message, onDismiss = radio::clearError, modifier = Modifier.align(Alignment.BottomCenter))
+                    }
                 }
             }
         }

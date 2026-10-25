@@ -42,6 +42,8 @@ void DabEnsemble::reset() {
     m_ensembleCollectFinished = false;
 
     m_ficPtr = std::unique_ptr<FicParser>(new FicParser);
+    // Set after the old parser, whose thread runs the sanity check, has been replaced.
+    m_sanityCheckStarted = false;
 
     m_ensembleId = 0xFFFF;
     m_cifCntHigh = 0x00;
@@ -779,11 +781,22 @@ void DabEnsemble::fig_01_done_cb(Fig::FIG_01_TYPE type) {
 
 //TODO this needs some more work
 void DabEnsemble::checkServiceSanity() {
+    // Some ensembles signal more components for a service than they ever describe. Once the check
+    // has been failing for a while, such a service is accepted with the components it has, so it
+    // does not hold back the whole ensemble.
+    constexpr auto componentCountGrace = std::chrono::seconds(8);
+    if(!m_sanityCheckStarted) {
+        m_sanityCheckStart = std::chrono::steady_clock::now();
+        m_sanityCheckStarted = true;
+    }
+    const bool tolerateComponentCount = std::chrono::steady_clock::now() - m_sanityCheckStart >= componentCountGrace;
+
     for(const auto& srvMap : m_servicesMap) {
         auto srv = srvMap.second;
         for(const auto& srvComp : srv.getServiceComponents()) {
             std::cout << m_logTag << " ServiceSanity Check for SId: " << std::hex << +srv.getServiceId() << std::dec << " Components: " << +srv.getServiceComponents().size() << " : " << +srv.getNumberServiceComponents() << std::endl;
-            if(srvComp->getSubChannelId() != 0xFF && srvComp->getMscStartAddress() != 0xFFFF && srvComp->getSubchannelSize() != 0xFFFF && (srv.getNumberServiceComponents() == srv.getServiceComponents().size()) ) {
+            const bool componentCountOk = tolerateComponentCount || srv.getNumberServiceComponents() == srv.getServiceComponents().size();
+            if(srvComp->getSubChannelId() != 0xFF && srvComp->getMscStartAddress() != 0xFFFF && srvComp->getSubchannelSize() != 0xFFFF && componentCountOk) {
                 switch(srvComp->getServiceComponentType()) {
                     case DabServiceComponent::SERVICECOMPONENTTYPE::MSC_PACKET_MODE_DATA: {
                         std::shared_ptr<DabServiceComponentMscPacketData> packComp = std::static_pointer_cast<DabServiceComponentMscPacketData>(srvComp);

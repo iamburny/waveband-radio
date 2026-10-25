@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <chrono>
 
 #include "ficparser.h"
 
@@ -90,6 +91,9 @@ protected:
     std::unique_ptr<FicParser> m_ficPtr{nullptr};
     uint32_t m_ensembleFrequency;
     bool m_ensembleCollectFinished{false};
+    // When the sanity check first ran for the current ensemble; see checkServiceSanity().
+    std::chrono::steady_clock::time_point m_sanityCheckStart{};
+    bool m_sanityCheckStarted{false};
 
 private:
     void registerCbs();

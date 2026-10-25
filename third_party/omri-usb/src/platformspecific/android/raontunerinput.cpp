@@ -362,6 +362,7 @@ void RaonTunerInput::processScanCommands() {
 void RaonTunerInput::startScanCommand() {
     std::cout << LOG_TAG << (m_usbDevice != nullptr ? (m_usbDevice.get()->getDeviceName()) : "NULL") << " Starting service scan!" << std::endl;
     m_isScanning = true;
+    m_scanNextQueued = false;
     m_currentScanningEnsembleNum = 0;
     m_maxCollectionWaitLoops = MAX_COLLECTION_LOOPS;
     m_ficCollectionWaitLoops = 300;
@@ -438,6 +439,10 @@ void RaonTunerInput::scanNext() {
             m_usbDevice->callCallback(UsbTunerDevice::TUNER_CALLBACK_TYPE::TUNER_CALLBACK_READY);
         }
     }
+
+    // The previous channel's FIC thread has been stopped and the new one starts with full retry
+    // counts, so a request from here on belongs to the channel now tuned.
+    m_scanNextQueued = false;
 }
 
 std::string RaonTunerInput::getDeviceName() const {
@@ -448,10 +453,17 @@ std::string RaonTunerInput::getDeviceName() const {
 void RaonTunerInput::threadedFicRead() {
 
     // The scan thread joins this thread while holding m_ioMutex, so never block on it indefinitely.
+    // Waits happen with the mutex released, so the scan thread can step to the next channel promptly.
     while(m_readFicThreadRunning) {
-        std::unique_lock<std::recursive_timed_mutex> lock(m_ioMutex, std::defer_lock);
-        if(lock.try_lock_for(std::chrono::milliseconds(10))) {
-            readFic();
+        std::chrono::milliseconds wait{0};
+        {
+            std::unique_lock<std::recursive_timed_mutex> lock(m_ioMutex, std::defer_lock);
+            if(lock.try_lock_for(std::chrono::milliseconds(10))) {
+                wait = readFic();
+            }
+        }
+        if(wait.count() > 0) {
+            std::this_thread::sleep_for(wait);
         }
     }
 }
@@ -508,7 +520,7 @@ void RaonTunerInput::ensembleCollectFinished() {
     // Runs on the FIB parser thread, which must not touch the device: hand the work over.
     if(m_isScanning) {
         m_usbDevice->ensembleReady(getEnsemble());
-        m_scanCommandQueue.push(std::bind(&RaonTunerInput::scanNext, this));
+        requestScanNext();
         return;
     }
 
@@ -1219,22 +1231,27 @@ void RaonTunerInput::closeSubchannel(uint8_t subchanId) {
     }
 }
 
-void RaonTunerInput::readFic() {
+void RaonTunerInput::requestScanNext() {
+    if(!m_scanNextQueued.exchange(true)) {
+        m_scanCommandQueue.push(std::bind(&RaonTunerInput::scanNext, this));
+    }
+}
+
+std::chrono::milliseconds RaonTunerInput::readFic() {
     uint8_t lockStatus = getLockStatus();
 
     if(lockStatus != RTV_DAB_CHANNEL_LOCK_OK) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if(lockStatus == RTV_DAB_OFDM_LOCK_MASK || lockStatus == RTV_DAB_FEC_LOCK_MASK) {
             m_maxCollectionWaitLoops += 8;
         }
 
         m_maxCollectionWaitLoops -= 10;
         if(m_maxCollectionWaitLoops <= 0) {
-            m_scanCommandQueue.push(std::bind(&RaonTunerInput::scanNext, this));
+            requestScanNext();
         }
 
         std::cout << LOG_TAG << "ScanRetries: " << +m_maxCollectionWaitLoops << " LockStat: " << +lockStatus << std::endl;
-        return;
+        return std::chrono::milliseconds(100);
     }
 
     switchPage(REGISTER_PAGE_FM);
@@ -1265,9 +1282,13 @@ void RaonTunerInput::readFic() {
         --m_ficCollectionWaitLoops;
         std::cout << LOG_TAG << "FicRetries: " << +m_ficCollectionWaitLoops << std::endl;
         if(m_ficCollectionWaitLoops <= 0) {
-            m_scanCommandQueue.push(std::bind(&RaonTunerInput::scanNext, this));
+            requestScanNext();
         }
+        return std::chrono::milliseconds(0);
     }
+
+    // Locked but no FIC data yet: poll again shortly.
+    return std::chrono::milliseconds(5);
 }
 
 void RaonTunerInput::readMsc() {

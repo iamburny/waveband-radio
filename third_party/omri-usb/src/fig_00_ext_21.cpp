@@ -33,22 +33,34 @@ Fig_00_Ext_21::~Fig_00_Ext_21() {
 }
 
 void Fig_00_Ext_21::parseFigData(const std::vector<uint8_t>& figData) {
+    // Every length below comes from the broadcast, so each read is checked against the data left.
+    // A frequency list of an unhandled R&M type is skipped, and an FI list stops at a truncated entry.
     auto figIter = figData.cbegin() +1;
-    while(figIter < figData.cend()) {
-        uint16_t rfa = static_cast<uint16_t>(((*figIter++ & 0xFF) << 3) | (((*figIter & 0xE0) >> 5) & 0xFF));
+    while(std::distance(figIter, figData.cend()) >= 2) {
+        // Bytes are read into locals first: several reads in one expression would be unsequenced.
+        const uint8_t rfaHigh = *figIter++;
+        uint16_t rfa = static_cast<uint16_t>(((rfaHigh & 0xFF) << 3) | (((*figIter & 0xE0) >> 5) & 0xFF));
         uint8_t lenFiList = static_cast<uint8_t>((*figIter++ & 0x1F) & 0xFF);
+        if(std::distance(figIter, figData.cend()) < lenFiList) {
+            break;
+        }
 
         std::vector<uint8_t> fiListData(figData.cbegin() + std::distance(figData.cbegin(), figIter), figData.cbegin() + std::distance(figData.cbegin(), figIter) + lenFiList);
 
         figIter += lenFiList;
 
         auto fiListIter = fiListData.cbegin();
-        while(fiListIter < fiListData.cend()) {
-            uint16_t idField = static_cast<uint16_t>(((*fiListIter++ & 0xFF) << 8) | (*fiListIter++ & 0xFF));
+        while(std::distance(fiListIter, fiListData.cend()) >= 3) {
+            const uint8_t idHigh = *fiListIter++;
+            const uint8_t idLow = *fiListIter++;
+            uint16_t idField = static_cast<uint16_t>(((idHigh & 0xFF) << 8) | (idLow & 0xFF));
 
             auto rangeModulation =  static_cast<uint8_t>((((*fiListIter & 0xF0) >> 4) & 0xFF));
             bool contFlag = (((*fiListIter & 0x08) >> 3) & 0xFF) != 0;
             uint8_t frqListEntryLen = static_cast<uint8_t>(((*fiListIter++ & 0x07) & 0xFF));
+            if(std::distance(fiListIter, fiListData.cend()) < frqListEntryLen) {
+                break;
+            }
 
             std::vector<uint8_t> freqListData(fiListData.cbegin() + std::distance(fiListData.cbegin(), fiListIter), fiListData.cbegin() + std::distance(fiListData.cbegin(), fiListIter) + frqListEntryLen);
 
@@ -62,8 +74,11 @@ void Fig_00_Ext_21::parseFigData(const std::vector<uint8_t>& figData) {
                 freqInfo.isChangeEvent = true;
             }
 
+            // Bytes per entry in the frequency list for each R&M type; 0 for types not handled here.
+            const long entrySize = rangeModulation == 0 ? 3 : rangeModulation == 8 ? 1 : (rangeModulation == 6 || rangeModulation == 14) ? 3 : 0;
+
             auto freqListIter = freqListData.cbegin();
-            while(freqListIter < freqListData.cend()) {
+            while(entrySize > 0 && std::distance(freqListIter, freqListData.cend()) >= entrySize) {
                 //R&M = 0000: DAB Ensemble
                 if(rangeModulation == 0) {
                     /*
@@ -80,12 +95,18 @@ void Fig_00_Ext_21::parseFigData(const std::vector<uint8_t>& figData) {
                     switch (controlField) {
                         case 0:
                             freqInfo.adjacent = DabEnsembleAdjacent::GEOGRAPHICALLY_ADJACENT_TRANSMISSION_MODE_NOT_SIGNALLED;
+                            break;
                         case 1:
                             freqInfo.adjacent = DabEnsembleAdjacent::GEOGRAPHICALLY_NOT_ADJACENT_TRANSMISSION_MODE_NOT_SIGNALLED;
+                            break;
                         case 2:
                             freqInfo.adjacent = DabEnsembleAdjacent::GEOGRAPHICALLY_ADJACENT_TRANSMISSION_MODE_ONE;
+                            break;
                         case 3:
                             freqInfo.adjacent = DabEnsembleAdjacent::GEOGRAPHICALLY_NOT_ADJACENT_TRANSMISSION_MODE_ONE;
+                            break;
+                        default:
+                            break;
                     };
                     /*
                      * Freq (Frequency) a: this 19-bit field, coded as an unsigned binary number, shall represent the
@@ -102,7 +123,10 @@ void Fig_00_Ext_21::parseFigData(const std::vector<uint8_t>& figData) {
                      *  ..............................................................
                      *   1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1    524 287    : 8 388 592 kHz.
                      */
-                    uint32_t frequency = static_cast<uint32_t>(((*freqListIter++ & 0x07) << 16) | ((*freqListIter++ & 0xFF) << 8) | ((*freqListIter++ & 0xFF)));
+                    const uint8_t freqHigh = *freqListIter++;
+                    const uint8_t freqMid = *freqListIter++;
+                    const uint8_t freqLow = *freqListIter++;
+                    uint32_t frequency = static_cast<uint32_t>(((freqHigh & 0x07) << 16) | ((freqMid & 0xFF) << 8) | (freqLow & 0xFF));
 
                     freqInfo.frequencyInformationType = FrequencyInformationType::DAB_ENSEMBLE;
                     freqInfo.frequenciesKHz.push_back(frequency*16);
@@ -166,7 +190,9 @@ void Fig_00_Ext_21::parseFigData(const std::vector<uint8_t>& figData) {
                      * 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1   32 767   : 32 767 kHz.
                      */
                     bool multiplier = *freqListIter >> 7U != 0;
-                    uint16_t frequency = static_cast<uint8_t>(((*freqListIter++ & 0x7F) << 8) | ((*freqListIter++ & 0xFF)));
+                    const uint8_t freqHigh = *freqListIter++;
+                    const uint8_t freqLow = *freqListIter++;
+                    uint16_t frequency = static_cast<uint16_t>(((freqHigh & 0x7F) << 8) | (freqLow & 0xFF));
                     freqInfo.frequenciesKHz.push_back(multiplier ? frequency*10 : frequency);
                     if(rangeModulation == 6) {
                         freqInfo.frequencyInformationType = FrequencyInformationType::DRM;

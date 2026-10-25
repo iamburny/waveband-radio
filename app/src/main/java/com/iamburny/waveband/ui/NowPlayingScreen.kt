@@ -312,12 +312,15 @@ private fun PresetStrip(
                     .padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
-                Text("${slot + 1}", style = dabText(18, FontWeight.ExtraBold), color = if (selected) c.accentText else c.muted)
+                // A saved preset gives the slot number's line to the station name.
+                if (station == null) {
+                    Text("${slot + 1}", style = dabText(18, FontWeight.ExtraBold), color = c.muted)
+                }
                 Text(
                     station?.info?.label ?: "+ Save",
-                    style = dabText(22, FontWeight.Bold),
+                    style = dabText(22, FontWeight.Bold, lineHeight = 26.sp),
                     color = if (station != null) c.text else c.muted,
-                    maxLines = 1,
+                    maxLines = if (station != null) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

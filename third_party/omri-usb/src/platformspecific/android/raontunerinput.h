@@ -103,6 +103,9 @@ private:
     int m_ficCollectionWaitLoops{300};
 
     ConcurrentQueue<std::function<void(void)>> m_scanCommandQueue;
+    // Set while a scanNext is queued, so the FIC thread and the ensemble callback queue at most one
+    // step per channel; a backlog of steps would cut the following channels short.
+    std::atomic<bool> m_scanNextQueued{false};
     std::atomic<bool> m_scanCommandThreadRunning{false};
     std::thread m_scanCommandThread;
 
@@ -339,7 +342,9 @@ private:
     void openSubChannel(uint8_t subchanId);
     void closeSubchannel(uint8_t subchanId);
 
-    void readFic();
+    // Returns how long the FIC thread should wait, with the I/O mutex released, before reading again.
+    std::chrono::milliseconds readFic();
+    void requestScanNext();
     void readMsc();
 
     void readData();

@@ -27,8 +27,8 @@ SDK command-line tools are at `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\b
 
 ## Target device and emulator
 
-- Real target: "H6" head unit, Android 13 (API 33), 1280×720 landscape at 160 dpi (1 design px = 1 dp), Snapdragon 665 (arm64), steering-wheel controls arrive as media buttons. It is regular Android, not Android Automotive OS.
-- Matching emulator: AVD `HeadUnit_H6_API33`. Start it with `%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe -avd HeadUnit_H6_API33`.
+- Real target: "H6" head unit, Android 13 (API 33), 1280×720 landscape at 240 dpi, Snapdragon 665 (arm64), steering-wheel controls arrive as media buttons. It is regular Android, not Android Automotive OS.
+- Matching emulator: AVD `HeadUnit_H6_API33` (160 dpi; `adb shell wm density 240` reproduces the real unit's density). Start it with `%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe -avd HeadUnit_H6_API33`.
 - `adb devices` often lists a stale offline `emulator-5562`; always pass `-s <serial>`.
 - In Git Bash, set `MSYS_NO_PATHCONV=1` before `adb shell` commands with device paths, or they get rewritten to Windows paths.
 - The Windows emulator cannot pass USB devices through. Anything touching the real stick (probe, register I/O, scan, live audio, signal/bitrate/PTy from omri) can only be verified on physical hardware; on the emulator use the debug-only **Demo tuner** (`StubDabBackend`). README.md has the real-hardware logcat checklist.
@@ -65,7 +65,7 @@ SDK command-line tools are at `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\b
 
 **UI.**
 - Jetpack Compose (Material3) in a single activity, `ui/MainActivity`. `ui/DabApp.kt` is the shell with the nav rail, and there is one file per screen.
-- The look is copied exactly from a design canvas at 1280×720 (1 px = 1 dp). Colours live in `ui/theme/Theme.kt` as night and day token sets with four accents. Don't substitute Material defaults.
+- The look is copied exactly from a design canvas at 1280×720 (1 px = 1 dp at 160 dpi). `ui/DesignScale.kt` scales the whole tree uniformly so the 1280×664 dp content area (canvas minus the reference status and navigation bars) fits the window at any density; write layouts in design dp and never read the system density directly. Colours live in `ui/theme/Theme.kt` as night and day token sets with four accents. Don't substitute Material defaults.
 - Display mode Auto follows the system night mode; the activity handles `uiMode` changes itself.
 - The Manrope font is bundled in `res/font` (OFL).
 - Station tiles are generated monograms (`Monogram.kt`) unless the station sends a slideshow image.

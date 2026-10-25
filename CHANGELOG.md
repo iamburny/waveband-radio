@@ -6,6 +6,22 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-25
+
+### Fixed
+
+- A full scan found no stations on a real USB tuner: it moved on from channels before reading
+  their station lists.
+- The app crashed while scanning some multiplexes, including BBC National DAB.
+- BBC National DAB stations were missing after a scan.
+- On head units with a high-density screen (such as 240 dpi), screens were oversized and Settings
+  was cut off. The layout now scales to fit any screen.
+
+### Changed
+
+- Saved presets on the Now Playing screen show the station name on up to two lines instead of the
+  preset number.
+
 ## [0.1.0] - 2026-10-25
 
 First test release, published to the Google Play internal testing track.
@@ -36,5 +52,6 @@ First test release, published to the Google Play internal testing track.
 - Only one USB tuner type is supported so far.
 - Requires Android 7.0 (API 24) or later.
 
-[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/iamburny/waveband-radio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/iamburny/waveband-radio/releases/tag/v0.1.0

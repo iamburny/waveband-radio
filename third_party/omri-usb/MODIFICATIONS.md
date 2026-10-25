@@ -52,7 +52,12 @@ To see the exact changes, diff `src/` against `omriusb/src/main/cpp` at the comm
   I/O, and does not report READY again. A failed power-up also reports `TUNER_CALLBACK_FAILED`;
   power-up gives up early when the tuner is being closed.
 - USB I/O is serialised: the command, scan and FIC threads hold a mutex for each unit of work, so
-  a register page switch and the transfers that depend on it cannot interleave.
+  a register page switch and the transfers that depend on it cannot interleave. The FIC thread
+  waits between reads with the mutex released (100 ms without lock, 5 ms while locked and waiting
+  for FIC data), so the scan thread can tune promptly.
+- Scanning queues at most one step to the next channel at a time (`requestScanNext()`). Before, the
+  FIC thread and the ensemble-complete callback could queue several, which skipped channels or
+  left them before their ensemble was collected.
 - The ensemble-complete callback runs on the FIB parser thread. It no longer touches the device;
   it queues the service start onto the command thread. A service is reported started before
   decoding is switched on, so the replayed label and slide follow the start notification.
@@ -77,9 +82,20 @@ To see the exact changes, diff `src/` against `omriusb/src/main/cpp` at the comm
 
 `platformspecific/android/dabusbtunerinput.h`: `startService` takes a `DabServiceLink`.
 
+`fig_00_ext_21.cpp`: FIG 0/21 parsing checks every broadcast length against the data left. It
+skips the frequency list of an R&M type it does not handle and stops reading an FI list at a
+truncated entry. Before, an unhandled type never advanced and appended records until memory ran
+out. Multi-byte fields are read one byte at a time (the combined reads were unsequenced), the
+DRM/AMSS frequency keeps all 15 bits instead of being cut to 8, and the adjacency `switch` no longer
+falls through, so `adjacent` holds the signalled value.
+
 `dabensemble.{h,cpp}`:
 
 - New `stopFicParser()`, which stops the FIB parser thread.
+- `checkServiceSanity()` accepts a service whose described components fall short of the number
+  FIG 0/2 signals once the check has been failing for 8 seconds. Before, one such service (seen on
+  the UK BBC National multiplex) kept the whole ensemble from completing, so none of its services
+  were reported.
 - FIG 0/18 (announcement support) is stored per service instead of being ignored, once FIG 0/0
   has identified the ensemble. `getAnnouncementSupport()` returns it, and
   `registerAnnouncementSupportCallback()` reports new or changed entries.

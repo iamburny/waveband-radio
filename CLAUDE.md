@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-DAB/DAB+ radio player for USB tuner sticks, targeting an aftermarket Android car head unit. Kotlin, single `app` module, package `com.matt.dabtuner`, native code via NDK/CMake.
+Waveband Radio: a DAB/DAB+ radio player for USB tuner sticks, targeting an aftermarket Android car head unit. Kotlin, single `app` module, package `com.matt.dabtuner`, native code via NDK/CMake.
 
 ## Commands
 

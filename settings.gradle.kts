@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DABtuner"
+rootProject.name = "WavebandRadio"
 include(":app")

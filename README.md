@@ -1,6 +1,6 @@
-# DAB Tuner
+# Waveband Radio
 
-An Android DAB/DAB+ radio player for USB tuner sticks: Kotlin, single `app` module, package
+An Android radio player, currently DAB/DAB+ via USB tuner sticks: Kotlin, single `app` module, package
 `com.matt.dabtuner`.
 
 Built for a landscape car head unit (1280×720, 160 dpi, steering-wheel media buttons). The UI is

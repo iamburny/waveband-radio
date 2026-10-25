@@ -67,7 +67,8 @@ service ID).
   station name, the dynamic label, and the slideshow image, logo or monogram as artwork.
 - **Station logos**: the only network use. With the setting on (the default), the app looks up
   each USB-tuner station on RadioDNS (`0.<SId>.<EId>.<GCC>.dab.radiodns.org`, CNAME then the
-  `_radiospi._tcp` SRV record), downloads the broadcaster's `SI.xml` once per refresh, and stores
+  `_radiospi._tcp` SRV record, or the older `_radioepg._tcp` record that Global still uses alone),
+  downloads the broadcaster's `SI.xml` once per refresh, and stores
   one logo per station (scaled to 320 px) in `files/logos`. Logos are refreshed after 25 days, as
   broadcasters ask for at least monthly. Stations the broadcaster has no logo for are retried after
   7 days; when a broadcaster's server fails, the stored logo is kept and the station is retried

@@ -32,25 +32,30 @@ class RadioDnsClient(private val connectivity: ConnectivityManager) {
      * Thrown when RadioDNS or the broadcaster says there is nothing for a service: no RadioDNS
      * entry, no SPI server, or HTTP 404/410. Other failures are [IOException]s and may pass.
      */
-    class NotFound(message: String) : Exception(message)
+    open class NotFound(message: String) : Exception(message)
+
+    /** HTTP 401/403: the server only serves licensed receivers (Radioplayer does), or blocks this client. */
+    class NotOffered(message: String) : NotFound(message)
 
     /** The broadcaster's domain for the service named [lookupName]: the CNAME of the RadioDNS name. */
     suspend fun broadcasterDomain(lookupName: String): String =
         DnsMessage.cnames(query(lookupName, DnsMessage.TYPE_CNAME)).firstOrNull()?.trimEnd('.')
             ?: throw NotFound("No RadioDNS entry for $lookupName")
 
-    /** URL of the broadcaster's SI file, from the `_radiospi._tcp` SRV record of its [domain]. */
+    /**
+     * URL of the broadcaster's SI file, from the `_radiospi._tcp` SRV record of its [domain], or
+     * else the older `_radioepg._tcp` record, which some broadcasters (Global in the UK) still
+     * publish alone and which serves the same file.
+     */
     suspend fun serviceInformationUrl(domain: String): String {
-        val srv = DnsMessage.srvs(query("_radiospi._tcp.$domain", DnsMessage.TYPE_SRV)).firstOrNull()
-            ?: throw NotFound("No SPI server for $domain")
-        val host = srv.target.trimEnd('.')
-        // A target of "." means the service is deliberately not offered.
-        if (host.isEmpty()) throw NotFound("No SPI server for $domain")
-        return when (srv.port) {
-            443 -> "https://$host/radiodns/spi/3.1/SI.xml"
-            80 -> "http://$host/radiodns/spi/3.1/SI.xml"
-            else -> "http://$host:${srv.port}/radiodns/spi/3.1/SI.xml"
-        }
+        val srv = SPI_SERVICES.firstNotNullOfOrNull { service ->
+            try {
+                DnsMessage.srvs(query("_$service._tcp.$domain", DnsMessage.TYPE_SRV)).firstOrNull()
+            } catch (e: NotFound) {
+                null
+            }
+        } ?: throw NotFound("No SPI server for $domain")
+        return RadioDns.serviceInformationUrl(srv) ?: throw NotFound("No SPI server for $domain")
     }
 
     /**
@@ -104,6 +109,8 @@ class RadioDnsClient(private val connectivity: ConnectivityManager) {
                         if (current.protocol != "http" && current.protocol != "https") throw IOException("Redirect to $current")
                         return@repeat
                     }
+                    code == HttpURLConnection.HTTP_UNAUTHORIZED || code == HttpURLConnection.HTTP_FORBIDDEN ->
+                        throw NotOffered("$current: HTTP $code")
                     code == HttpURLConnection.HTTP_NOT_FOUND || code == HttpURLConnection.HTTP_GONE -> throw NotFound("$current: HTTP $code")
                     code !in 200..299 -> throw IOException("$current: HTTP $code")
                 }
@@ -195,6 +202,7 @@ class RadioDnsClient(private val connectivity: ConnectivityManager) {
         const val TIMEOUT_MS = 10_000
         const val DOWNLOAD_DEADLINE_MS = 30_000L
         const val MAX_REDIRECTS = 5
+        val SPI_SERVICES = listOf("radiospi", "radioepg")
         const val USER_AGENT = "WavebandRadio (RadioDNS logos)"
     }
 }

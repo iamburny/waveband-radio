@@ -42,6 +42,20 @@ object RadioDns {
      */
     fun logoKey(info: DabServiceInfo): String? = globalCountryCode(info)?.let { "%s.%04x".format(it, info.serviceId) }
 
+    /**
+     * SI file URL served by the host of an SPI [srv] record, or null when the record's target is
+     * "." (the service is deliberately not offered).
+     */
+    fun serviceInformationUrl(srv: DnsMessage.Srv): String? {
+        val host = srv.target.trimEnd('.')
+        if (host.isEmpty()) return null
+        return when (srv.port) {
+            443 -> "https://$host/radiodns/spi/3.1/SI.xml"
+            80 -> "http://$host/radiodns/spi/3.1/SI.xml"
+            else -> "http://$host:${srv.port}/radiodns/spi/3.1/SI.xml"
+        }
+    }
+
     /** Bearer URI an SI file lists for the service, such as "dab:ce1.ce15.c222.0". */
     fun bearerUri(info: DabServiceInfo): String? {
         val gcc = globalCountryCode(info) ?: return null

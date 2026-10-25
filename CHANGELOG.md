@@ -6,6 +6,13 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-25
+
+### Fixed
+
+- Global stations (Capital, Heart, Smooth and others) now get their logos. Stations whose logos
+  are only available to licensed radio makers keep their generated tile and are retried weekly.
+
 ## [0.1.2] - 2026-10-25
 
 ### Added
@@ -65,7 +72,8 @@ First test release, published to the Google Play internal testing track.
 - Only one USB tuner type is supported so far.
 - Requires Android 7.0 (API 24) or later.
 
-[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/iamburny/waveband-radio/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/iamburny/waveband-radio/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/iamburny/waveband-radio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/iamburny/waveband-radio/releases/tag/v0.1.0

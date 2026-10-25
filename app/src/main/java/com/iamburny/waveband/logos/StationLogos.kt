@@ -146,6 +146,8 @@ class StationLogos(context: Context, scope: CoroutineScope) {
                 // Every remaining lookup starts with RadioDNS, so they would fail the same way.
                 if (++offlineFailures >= MAX_OFFLINE_FAILURES) break
                 continue
+            } catch (e: RadioDnsClient.NotOffered) {
+                Outcome.WITHHELD
             } catch (e: RadioDnsClient.NotFound) {
                 Outcome.NONE
             } catch (e: Exception) {
@@ -238,14 +240,20 @@ class StationLogos(context: Context, scope: CoroutineScope) {
         val properties = Properties()
         runCatching { indexFile.inputStream().use(properties::load) }
         val logos = HashMap<String, Long>()
+        // Lookups that found nothing under an older lookup procedure are tried again.
+        val sameLookup = properties.getProperty(LOOKUP_VERSION_KEY) == LOOKUP_VERSION
         for (key in properties.stringPropertyNames()) {
+            if (key == LOOKUP_VERSION_KEY) continue
             val parts = properties.getProperty(key).split(',')
             val checkedAt = parts.getOrNull(0)?.toLongOrNull() ?: continue
             val outcome = Outcome.entries.firstOrNull { it.stored == parts.getOrNull(1) } ?: continue
             val f = file(key)
             // A logo whose file has gone is looked up again on the next refresh.
             if (outcome == Outcome.FOUND && !f.exists()) continue
-            index[key] = Entry(checkedAt, outcome)
+            // Kept with a check time of 0, so it is due at once but stays in the index (and its
+            // logo, if any, stays visible) until it is looked up again.
+            val due = outcome != Outcome.FOUND && !sameLookup
+            index[key] = Entry(if (due) 0L else checkedAt, outcome)
             if (outcome != Outcome.NONE && f.exists()) logos[key] = f.lastModified()
         }
         stored.value = logos
@@ -253,6 +261,7 @@ class StationLogos(context: Context, scope: CoroutineScope) {
 
     private fun saveIndex() {
         val properties = Properties()
+        properties.setProperty(LOOKUP_VERSION_KEY, LOOKUP_VERSION)
         for ((key, entry) in index) properties.setProperty(key, "${entry.checkedAt},${entry.outcome.stored}")
         val temp = File(dir, "index.tmp")
         runCatching {
@@ -261,10 +270,14 @@ class StationLogos(context: Context, scope: CoroutineScope) {
         }.onFailure { Log.w(TAG, "Could not save the logo index", it) }
     }
 
-    /** How a lookup went: a logo stored, none published, or a broadcaster's server failed. */
+    /**
+     * How a lookup went: a logo stored, none published, the server refused to serve this app, or
+     * the server failed. Only NONE removes a logo stored earlier.
+     */
     private enum class Outcome(val stored: String, val retryAfterMs: Long) {
         FOUND("found", REFRESH_AFTER_MS),
         NONE("none", RETRY_NONE_AFTER_MS),
+        WITHHELD("withheld", RETRY_NONE_AFTER_MS),
         FAILED("failed", RETRY_FAILED_AFTER_MS),
     }
 
@@ -275,6 +288,9 @@ class StationLogos(context: Context, scope: CoroutineScope) {
 
     private companion object {
         const val TAG = "StationLogos"
+        // Raised whenever the lookup changes in a way that can find logos it missed before.
+        const val LOOKUP_VERSION_KEY = "lookup.version"
+        const val LOOKUP_VERSION = "2"
         // Broadcasters ask for logos to be refreshed at least monthly.
         const val REFRESH_AFTER_MS = 25L * 24 * 60 * 60 * 1000
         const val RETRY_NONE_AFTER_MS = 7L * 24 * 60 * 60 * 1000

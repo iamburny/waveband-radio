@@ -35,6 +35,23 @@ class RadioDnsTest {
     }
 
     @Test
+    fun buildsTheSiFileUrlFromAnSrvRecord() {
+        assertEquals(
+            "https://radiospi.api.bbci.co.uk/radiodns/spi/3.1/SI.xml",
+            RadioDns.serviceInformationUrl(DnsMessage.Srv(0, 0, 443, "radiospi.api.bbci.co.uk.")),
+        )
+        assertEquals(
+            "http://epg.musicradio.com/radiodns/spi/3.1/SI.xml",
+            RadioDns.serviceInformationUrl(DnsMessage.Srv(0, 100, 80, "epg.musicradio.com.")),
+        )
+        assertEquals(
+            "http://spi.example.org:8080/radiodns/spi/3.1/SI.xml",
+            RadioDns.serviceInformationUrl(DnsMessage.Srv(0, 0, 8080, "spi.example.org")),
+        )
+        assertNull(RadioDns.serviceInformationUrl(DnsMessage.Srv(0, 0, 0, ".")))
+    }
+
+    @Test
     fun cannotNameDataServiceIds() {
         assertNull(RadioDns.lookupName(radio2.copy(serviceId = 0xE1C22201L)))
     }

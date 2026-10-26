@@ -6,11 +6,13 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Upsert
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.iamburny.waveband.backend.DabServiceInfo
 import kotlinx.coroutines.flow.Flow
 
@@ -77,6 +79,20 @@ data class StationEntity(
 @Entity(tableName = "presets", primaryKeys = ["origin", "slot"])
 data class PresetEntity(val origin: String, val slot: Int, val stationKey: String)
 
+/** The RDS name last heard on an FM/AM frequency; [key] is its FmKey. */
+@Entity(tableName = "fm_names")
+data class FmNameEntity(@PrimaryKey val key: String, val name: String)
+
+@Dao
+interface FmNameDao {
+
+    @Query("SELECT * FROM fm_names")
+    fun observe(): Flow<List<FmNameEntity>>
+
+    @Upsert
+    suspend fun upsert(entity: FmNameEntity)
+}
+
 @Dao
 interface StationDao {
 
@@ -114,20 +130,57 @@ interface StationDao {
     @Upsert
     suspend fun setPreset(preset: PresetEntity)
 
+    @Query("DELETE FROM presets WHERE origin = :origin AND stationKey = :key AND slot != :slot")
+    suspend fun clearOtherPresets(origin: String, key: String, slot: Int)
+
+    /** Saves [preset], taking its station out of any other slot, so a station is only saved once. */
+    @Transaction
+    suspend fun savePreset(preset: PresetEntity) {
+        clearOtherPresets(preset.origin, preset.stationKey, preset.slot)
+        setPreset(preset)
+    }
+
     @Query("DELETE FROM presets WHERE origin = :origin AND slot = :slot")
     suspend fun clearPreset(origin: String, slot: Int)
+
+    @Query("SELECT * FROM presets WHERE origin = :origin AND slot = :slot")
+    suspend fun preset(origin: String, slot: Int): PresetEntity?
+
+    /** Swaps presets [a] and [b] of [origin]; either may be empty. */
+    @Transaction
+    suspend fun swapPresets(origin: String, a: Int, b: Int) {
+        val first = preset(origin, a)
+        val second = preset(origin, b)
+        clearPreset(origin, a)
+        clearPreset(origin, b)
+        first?.let { setPreset(it.copy(slot = b)) }
+        second?.let { setPreset(it.copy(slot = a)) }
+    }
 }
 
 @Database(
-    entities = [StationEntity::class, PresetEntity::class],
-    version = 2,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    entities = [StationEntity::class, PresetEntity::class, FmNameEntity::class],
+    version = 3,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class StationDatabase : RoomDatabase() {
     abstract fun stations(): StationDao
+    abstract fun fmNames(): FmNameDao
 
     companion object {
         fun create(context: Context): StationDatabase =
-            Room.databaseBuilder(context, StationDatabase::class.java, "stations.db").build()
+            Room.databaseBuilder(context, StationDatabase::class.java, "stations.db")
+                .addCallback(DropDuplicatePresets)
+                .build()
+    }
+}
+
+/** A station saved to more than one preset slot keeps only the first. */
+private object DropDuplicatePresets : RoomDatabase.Callback() {
+    override fun onOpen(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "DELETE FROM presets WHERE EXISTS (SELECT 1 FROM presets AS earlier WHERE earlier.origin = presets.origin " +
+                "AND earlier.stationKey = presets.stationKey AND earlier.slot < presets.slot)"
+        )
     }
 }

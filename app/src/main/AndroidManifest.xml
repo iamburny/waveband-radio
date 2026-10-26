@@ -13,6 +13,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- The head unit's vendor service, which drives its FM/AM tuner (see fm/EventCenterRadio). -->
+    <queries>
+        <package android:name="com.szchoiceway.eventcenter" />
+    </queries>
+
     <application
         android:name=".DabTunerApp"
         android:allowBackup="true"

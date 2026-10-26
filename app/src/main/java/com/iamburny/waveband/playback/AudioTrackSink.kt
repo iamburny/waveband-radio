@@ -13,6 +13,14 @@ class AudioTrackSink : PcmSink {
     private var track: AudioTrack? = null
     private var format: PcmFormat? = null
 
+    /** 0..1; lowered while another app plays over the radio and the system can't duck for us. */
+    @Volatile
+    var volume: Float = 1f
+        set(value) {
+            field = value
+            synchronized(lock) { track?.setVolume(value) }
+        }
+
     @Volatile
     var playing: Boolean = false
         set(value) {
@@ -47,7 +55,10 @@ class AudioTrackSink : PcmSink {
                 .setBufferSizeInBytes(minBuffer * 4)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
-                .also { if (playing) it.play() }
+                .also {
+                    it.setVolume(volume)
+                    if (playing) it.play()
+                }
         }
     }
 

@@ -19,7 +19,7 @@ class StationRepository(private val dao: StationDao) {
     fun stations(origin: TunerOrigin): Flow<List<Station>> =
         dao.observe(origin.name).map { list -> list.map { Station(it.toServiceInfo(), it.favourite) } }
 
-    /** Station keys of the [PRESET_COUNT] preset slots, null for empty ones. */
+    /** Keys of the [PRESET_COUNT] preset slots, null for empty ones: DAB station keys or FmKeys. */
     fun presets(origin: TunerOrigin): Flow<List<String?>> =
         dao.observePresets(origin.name).map { list ->
             val bySlot = list.associate { it.slot to it.stationKey }
@@ -40,8 +40,13 @@ class StationRepository(private val dao: StationDao) {
 
     suspend fun setPreset(origin: TunerOrigin, slot: Int, key: String) {
         require(slot in 0 until PRESET_COUNT)
-        dao.setPreset(PresetEntity(origin.name, slot, key))
+        dao.savePreset(PresetEntity(origin.name, slot, key))
     }
 
     suspend fun clearPreset(origin: TunerOrigin, slot: Int) = dao.clearPreset(origin.name, slot)
+
+    suspend fun swapPresets(origin: TunerOrigin, a: Int, b: Int) {
+        require(a in 0 until PRESET_COUNT && b in 0 until PRESET_COUNT)
+        if (a != b) dao.swapPresets(origin.name, a, b)
+    }
 }

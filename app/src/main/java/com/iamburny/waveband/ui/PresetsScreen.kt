@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -27,11 +28,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iamburny.waveband.DabTunerApp
 import com.iamburny.waveband.RadioController
-import com.iamburny.waveband.backend.DabServiceInfo
 import com.iamburny.waveband.data.PRESET_COUNT
-import com.iamburny.waveband.data.Station
+import com.iamburny.waveband.data.Source
 import com.iamburny.waveband.ui.theme.Dab
 import com.iamburny.waveband.ui.theme.dabText
 
@@ -41,8 +43,18 @@ fun PresetsScreen(radio: RadioController, actions: RadioActions) {
     val stations by radio.stations.collectAsStateWithLifecycle()
     val presets by radio.presets.collectAsStateWithLifecycle()
     val state by radio.state.collectAsStateWithLifecycle()
+    val source by radio.source.collectAsStateWithLifecycle()
+    val app = DabTunerApp.from(LocalContext.current)
+    val fmState by app.headUnitRadio.state.collectAsStateWithLifecycle()
+    val fmNames by app.fmStationNames.names.collectAsStateWithLifecycle()
     var editing by rememberSaveable { mutableStateOf(false) }
-    val current = state.current
+    val drag = rememberPresetDragState(PRESET_COUNT) { a, b -> radio.swapPresets(a, b) }
+    // What a long-press saves: the FM/AM frequency while listening to the tuner, else the DAB station.
+    val current = if (source == Source.FM && fmState.connected && fmState.active) {
+        PresetItem.of(fmState.key, emptyList(), fmNames, tunerAvailable = true)
+    } else {
+        state.current?.let { cur -> PresetItem.of(cur.key, stations, fmNames, false) }
+    }
 
     BackHandler(enabled = editing) { editing = false }
 
@@ -51,9 +63,9 @@ fun PresetsScreen(radio: RadioController, actions: RadioActions) {
             ScreenTitle("Presets")
             Text(
                 when {
-                    editing && current != null -> "Tap a tile to save ${current.label} there"
+                    editing && current != null -> "Tap a tile to save ${current.title} there"
                     editing -> "Tap × to clear a preset"
-                    else -> "Long-press a tile to save the current station"
+                    else -> "Long-press a tile to save what's playing, drag to move it"
                 },
                 style = dabText(20),
                 color = c.muted,
@@ -66,16 +78,17 @@ fun PresetsScreen(radio: RadioController, actions: RadioActions) {
         }
         Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             for (row in 0 until 3) {
-                Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                // The row holding a dragged tile goes on top, so the tile passes over the other rows.
+                Row(Modifier.weight(1f).fillMaxWidth().zIndex(if (drag.dragging?.div(4) == row) 1f else 0f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     for (col in 0 until 4) {
                         val slot = row * 4 + col
                         if (slot >= PRESET_COUNT) continue
-                        val key = presets.getOrNull(slot)
                         PresetTile(
                             slot = slot,
-                            station = key?.let { k -> stations.firstOrNull { it.key == k } },
+                            item = PresetItem.of(presets.getOrNull(slot), stations, fmNames, fmState.connected),
                             current = current,
                             editing = editing,
+                            drag = drag,
                             radio = radio,
                             actions = actions,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -90,36 +103,42 @@ fun PresetsScreen(radio: RadioController, actions: RadioActions) {
 @Composable
 private fun PresetTile(
     slot: Int,
-    station: Station?,
-    current: DabServiceInfo?,
+    item: PresetItem?,
+    current: PresetItem?,
     editing: Boolean,
+    drag: PresetDragState,
     radio: RadioController,
     actions: RadioActions,
     modifier: Modifier,
 ) {
     val c = Dab.colors
     val shape = RoundedCornerShape(24.dp)
-    val selected = station != null && station.key == current?.key
+    val selected = item != null && item.key == current?.key
+    val base = modifier.presetDrag(drag, slot, enabled = item != null) { "preset ${it + 1}" }
     val decorated = when {
-        station == null -> modifier.dashedBorder(3.dp, c.emptyBorder, 24.dp)
-        selected -> modifier.background(c.selectedBg, shape).dabBorder(3.dp, c.accent, shape)
-        else -> modifier.background(c.card, shape).dabBorder(3.dp, c.idleBorder, shape)
+        drag.target == slot -> base.background(c.selectedBg, shape).dabBorder(3.dp, c.accent, shape)
+        item == null -> base.dashedBorder(3.dp, c.emptyBorder, 24.dp)
+        selected -> base.background(c.selectedBg, shape).dabBorder(3.dp, c.accent, shape)
+        else -> base.background(c.card, shape).dabBorder(3.dp, c.idleBorder, shape)
     }
     val saveCurrent: (() -> Unit)? = current?.let { cur -> { radio.setPreset(slot, cur.key) } }
     val onClick: () -> Unit = when {
-        editing || station == null -> saveCurrent ?: {}
-        else -> ({ actions.play(station.info) })
+        editing || item == null -> saveCurrent ?: {}
+        item is PresetItem.DabStation -> ({ actions.play(item.station.info) })
+        item is PresetItem.Tuner -> ({ if (item.available) actions.playFm(item.band, item.frequency) })
+        else -> ({})
     }
-    val description = when {
-        station == null -> "Empty preset ${slot + 1}, long-press to save current station"
-        else -> "Preset ${slot + 1}, ${station.info.label}"
+    val description = when (item) {
+        null -> "Empty preset ${slot + 1}, long-press to save what's playing"
+        is PresetItem.Tuner -> "Preset ${slot + 1}, ${listOfNotNull(item.name, item.frequencyLabel).joinToString(", ")}"
+        else -> "Preset ${slot + 1}, ${item.title}"
     }
     Column(
         decorated
             .pressable(
                 shape,
-                onClickLabel = if (editing || station == null) "Save current station" else "Play",
-                onLongClickLabel = "Save current station",
+                onClickLabel = if (editing || item == null) "Save what's playing" else "Play",
+                onLongClickLabel = "Save what's playing",
                 onLongClick = saveCurrent,
             ) { onClick() }
             .semantics { contentDescription = description }
@@ -128,7 +147,7 @@ private fun PresetTile(
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("${slot + 1}", style = dabText(30, FontWeight.ExtraBold), color = if (selected) c.accentText else c.muted)
-            if (station != null) {
+            if (item != null) {
                 if (editing) {
                     DabIconButton(
                         DabIcons.Close,
@@ -140,18 +159,26 @@ private fun PresetTile(
                         shape = RoundedCornerShape(14.dp),
                     ) { radio.clearPreset(slot) }
                 } else {
-                    StationTile(station.info, size = 56.dp, corner = 14.dp, fontSize = 20)
+                    when (item) {
+                        is PresetItem.DabStation -> StationTile(item.station.info, size = 56.dp, corner = 14.dp, fontSize = 20)
+                        is PresetItem.Tuner -> BandTile(item.band, size = 56.dp, corner = 14.dp, fontSize = 20)
+                    }
                 }
             } else {
                 Box(Modifier.height(56.dp))
             }
         }
-        Text(
-            station?.info?.label ?: "+ Save here",
-            style = dabText(26, FontWeight.ExtraBold, lineHeight = 30.sp),
-            color = if (station != null) c.text else c.muted,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column {
+            Text(
+                item?.title ?: "+ Save here",
+                style = dabText(26, FontWeight.ExtraBold, lineHeight = 30.sp),
+                color = if (item != null && (item !is PresetItem.Tuner || item.available)) c.text else c.muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (item is PresetItem.Tuner && item.name != null) {
+                Text(item.frequencyLabel, style = dabText(20, FontWeight.SemiBold), color = c.muted, maxLines = 1)
+            }
+        }
     }
 }

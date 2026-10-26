@@ -19,6 +19,8 @@ Windows host: use `.\gradlew.bat` from PowerShell (or `./gradlew` from Git Bash)
 ./gradlew bundleRelease                 # app/build/outputs/bundle/release/app-release.aab for Play
 ```
 
+Debug builds use the application ID `com.iamburny.waveband.debug` (app name "Waveband Debug"), so they install alongside the Play build with their own stations and settings. Launch them with `adb shell am start -n com.iamburny.waveband.debug/com.iamburny.waveband.ui.MainActivity`.
+
 Release signing reads `keystore.properties` in the project root (gitignored; template in `keystore.properties.example`) or the `WAVEBAND_KEYSTORE`, `WAVEBAND_KEYSTORE_PASSWORD`, `WAVEBAND_KEY_ALIAS` and `WAVEBAND_KEY_PASSWORD` environment variables. Without them, release builds are unsigned. The upload key lives outside the repo; never commit a keystore or its passwords. Release builds are shrunk by R8, so JNI-facing classes rely on the keep rules in `app/proguard-rules.pro`. Bump `versionCode` for every Play upload.
 
 Toolchain is pinned in `app/build.gradle.kts`: NDK `27.1.12297006`, CMake `3.22.1`, ABIs arm64-v8a / armeabi-v7a / x86_64 (x86_64 is only for the emulator). Native libraries are linked with 16 KB page alignment.
@@ -27,7 +29,7 @@ SDK command-line tools are at `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\b
 
 ## Target device and emulator
 
-- Real target: "H6" head unit, Android 13 (API 33), 1280×720 landscape at 240 dpi, Snapdragon 665 (arm64), steering-wheel controls arrive as media buttons. It is regular Android, not Android Automotive OS.
+- Real target: "H6" head unit, Android 13 (API 33), 1280×720 landscape at 240 dpi, Snapdragon 665 (arm64), steering-wheel controls arrive as media buttons, except while the FM/AM tuner is ours, when the vendor service delivers them to its mode callback instead (see `fm/EventCenterRadio.kt`). It is regular Android, not Android Automotive OS.
 - Matching emulator: AVD `HeadUnit_H6_API33` (160 dpi; `adb shell wm density 240` reproduces the real unit's density). Start it with `%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe -avd HeadUnit_H6_API33`.
 - `adb devices` often lists a stale offline `emulator-5562`; always pass `-s <serial>`.
 - In Git Bash, set `MSYS_NO_PATHCONV=1` before `adb shell` commands with device paths, or they get rewritten to Windows paths.
@@ -73,6 +75,15 @@ SDK command-line tools are at `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\b
 **Station logos.** The app's only network access. `DabTunerApp` drives `StationLogos.refresh` from the USB origin's stations, the setting and connectivity; `RadioDnsClient` resolves the RadioDNS CNAME and `_radiospi._tcp` SRV (raw DNS via `DnsResolver` on API 29+, UDP to the network's DNS server below), and `ServiceInformation` parses `SI.xml`. Logos are keyed by `RadioDns.logoKey` (country code + SId, no ensemble). Cleartext HTTP is allowed (`res/xml/network_security_config.xml`) because many broadcasters' SPI servers are HTTP-only. Keep the privacy policy on bluegreenstudios.co.uk in step with any network use.
 
 **Media session.** Skip next/previous (steering-wheel buttons) steps through the saved stations in the current sort order (`StationOrder.kt`). The session metadata carries the station name, the DLS text and artwork.
+
+**Head unit FM/AM (`fm/`).** Choiceway head units drive their own FM/AM tuner through the vendor service `com.szchoiceway.eventcenter/.EventService`, which relays commands to the MCU; the tuner's audio is analogue and switched by the MCU, not PCM through Android. `HeadUnitRadio` is the interface, and `EventCenterRadio` implements it.
+- It reaches the service's private binder interface by raw `IBinder.transact`, using only the radio transaction codes in its `Txn` table. Never add a generated stub for the whole interface: it would expose the firmware upgrade, factory reset and CAN calls.
+- It validates the descriptor, band and frequency before sending any command.
+- Status comes from polling the cached getters plus the service's radio-info broadcast. Never call `setRadioCallback`: it is a single slot owned by the head unit's own radio app.
+- Taking audio focus in `playback/DabPlayer` is what makes the stock FM radio hand the speakers back.
+- The tuner's audio bypasses Android, so `EventCenterRadio` holds media audio focus while it has the speakers. On losing focus for good it only switches the tuner off if Android media playback starts within a few seconds: the stock radio app takes focus without playing anything, to drive the same tuner.
+- `DabTunerApp.headUnitRadio` connects once for the life of the process (debug builds without the vendor service get `FakeHeadUnitRadio`). `RadioController.source` (persisted) says whether DAB or FM/AM is the source; `DabPlayer` mirrors the tuner in the media session while FM/AM is the source (play/pause switch it on/off; skip, and the steering-wheel keys the tuner reports as `skipRequests`, step through the saved presets of the band playing — `QuickPresets`) and switches the source to FM whenever the tuner becomes ours.
+- The UI is `ui/FmNowPlaying.kt`; presets are shared with DAB (`ui/PresetItems.kt`, `data/QuickPresets.kt`). The behavioural notes are in `reverse-engineering/e-headunit-fm-radio/`.
 
 ## Licensing rules
 

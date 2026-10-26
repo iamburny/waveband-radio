@@ -6,6 +6,10 @@ import com.iamburny.waveband.data.SettingsRepository
 import com.iamburny.waveband.data.StationDatabase
 import com.iamburny.waveband.data.StationRepository
 import com.iamburny.waveband.data.TunerOrigin
+import com.iamburny.waveband.fm.EventCenterRadio
+import com.iamburny.waveband.fm.FakeHeadUnitRadio
+import com.iamburny.waveband.fm.FmStationNames
+import com.iamburny.waveband.fm.HeadUnitRadio
 import com.iamburny.waveband.logos.StationLogos
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,9 +32,24 @@ class DabTunerApp : Application() {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
 
+    private val database: StationDatabase by lazy { StationDatabase.create(this) }
+
     val radio: RadioController by lazy {
-        RadioController(this, StationRepository(StationDatabase.create(this).stations()), settingsRepository, appScope)
+        RadioController(this, StationRepository(database.stations()), settingsRepository, appScope)
     }
+
+    /**
+     * The head unit's own FM/AM tuner, connected for the life of the process; it reports itself
+     * connected only on head units with a supported one. Debug builds simulate one elsewhere.
+     * First used on the main thread.
+     */
+    val headUnitRadio: HeadUnitRadio by lazy {
+        val radio = if (BuildConfig.DEBUG && !EventCenterRadio.isInstalled(this)) FakeHeadUnitRadio(this) else EventCenterRadio(this)
+        radio.also { it.connect() }
+    }
+
+    /** RDS names heard on FM/AM frequencies, saved while the head unit's tuner plays. */
+    val fmStationNames: FmStationNames by lazy { FmStationNames(database.fmNames(), headUnitRadio, appScope) }
 
     val stationLogos: StationLogos by lazy { StationLogos(this, appScope).also(::keepLogosUpdated) }
 

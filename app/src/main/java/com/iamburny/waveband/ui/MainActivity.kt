@@ -32,7 +32,10 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.iamburny.waveband.BuildConfig
 import com.iamburny.waveband.DabTunerApp
 import com.iamburny.waveband.backend.DabServiceInfo
+import com.iamburny.waveband.data.Source
+import com.iamburny.waveband.data.Station
 import com.iamburny.waveband.data.TunerOrigin
+import com.iamburny.waveband.fm.FmBand
 import com.iamburny.waveband.playback.DabPlaybackService
 import com.iamburny.waveband.playback.DabPlayer
 import com.iamburny.waveband.ui.theme.DabTheme
@@ -61,8 +64,36 @@ class MainActivity : ComponentActivity() {
     private val actions = object : RadioActions {
         override fun play(service: DabServiceInfo) = withController { c ->
             c.setMediaItem(DabPlayer.mediaItemFor(service))
-            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            // Coming from FM/AM the player isn't idle, but DAB may still need preparing.
+            c.prepare()
             c.play()
+        }
+
+        override fun playDab() {
+            lifecycleScope.launch {
+                val service = radio.state.value.current ?: lastSavedStation()?.info
+                if (service != null && radio.state.value.tunerOpen) {
+                    play(service)
+                } else {
+                    // Nothing to play on DAB: just leave FM/AM.
+                    val fm = DabTunerApp.from(this@MainActivity).headUnitRadio
+                    if (fm.state.value.ours) fm.deactivate()
+                    radio.setSource(Source.DAB)
+                }
+            }
+        }
+
+        override fun playFm(band: FmBand, frequency: Int?) {
+            val fm = DabTunerApp.from(this@MainActivity).headUnitRadio
+            val s = fm.state.value
+            if (!s.connected) return
+            radio.setSource(Source.FM)
+            when {
+                !s.ours -> fm.activate(band, frequency)
+                frequency != null -> if (frequency != s.frequency || band != s.band) fm.tune(band, frequency)
+                // The band key cycles the tuner's FM1-FM3 banks, so only press it to change band.
+                band != s.band -> fm.selectBand(band)
+            }
         }
 
         override fun togglePlayPause() = withController { c ->
@@ -168,10 +199,21 @@ class MainActivity : ComponentActivity() {
         radio.consumeTunerOpened()
         if (radio.state.value.current != null) return
         val settings = radio.settings.first { it != null }!!
+        // Listening to FM/AM: the tuner stays ready, but doesn't take over.
+        if (settings.source == Source.FM && DabTunerApp.from(this).headUnitRadio.state.value.connected) return
         val key = settings.lastStationKey ?: return
         if (settings.lastOrigin != origin) return
         val station = radio.savedStation(origin, key) ?: return
         if (radio.state.value.current == null && radio.origin.value == origin) actions.play(station.info)
+    }
+
+    /** The station last played on the tuner whose stations are shown, if it is still saved. */
+    private suspend fun lastSavedStation(): Station? {
+        val settings = radio.settings.first { it != null }!!
+        val origin = radio.origin.value ?: return null
+        val key = settings.lastStationKey ?: return null
+        if (settings.lastOrigin != origin) return null
+        return radio.savedStation(origin, key)
     }
 
     /** Launched by the system when a matching tuner is plugged in; permission is already granted then. */

@@ -16,6 +16,9 @@ enum class Accent { AMBER, TEAL, BLUE, CORAL }
 
 enum class Region(val label: String) { UK("United Kingdom · Band III") }
 
+/** What the radio plays: a DAB station from the USB tuner, or the head unit's own FM/AM tuner. */
+enum class Source { DAB, FM }
+
 data class AppSettings(
     val displayMode: DisplayMode = DisplayMode.AUTO,
     val accent: Accent = Accent.AMBER,
@@ -26,6 +29,7 @@ data class AppSettings(
     val region: Region = Region.UK,
     val lastStationKey: String? = null,
     val lastOrigin: TunerOrigin = TunerOrigin.USB,
+    val source: Source = Source.DAB,
 )
 
 private val Context.settingsStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -44,6 +48,7 @@ class SettingsRepository(context: Context) {
             region = p[REGION].toEnum(Region.UK),
             lastStationKey = p[LAST_STATION],
             lastOrigin = p[LAST_ORIGIN].toEnum(TunerOrigin.USB),
+            source = p[SOURCE].toEnum(Source.DAB),
         )
     }
 
@@ -64,6 +69,8 @@ class SettingsRepository(context: Context) {
 
     suspend fun setLastOrigin(origin: TunerOrigin) = store.edit { it[LAST_ORIGIN] = origin.name }
 
+    suspend fun setSource(source: Source) = store.edit { it[SOURCE] = source.name }
+
     private companion object {
         val DISPLAY_MODE = stringPreferencesKey("display_mode")
         val ACCENT = stringPreferencesKey("accent")
@@ -73,6 +80,7 @@ class SettingsRepository(context: Context) {
         val REGION = stringPreferencesKey("region")
         val LAST_STATION = stringPreferencesKey("last_station")
         val LAST_ORIGIN = stringPreferencesKey("last_origin")
+        val SOURCE = stringPreferencesKey("source")
 
         inline fun <reified E : Enum<E>> String?.toEnum(default: E): E =
             this?.let { name -> enumValues<E>().firstOrNull { it.name == name } } ?: default

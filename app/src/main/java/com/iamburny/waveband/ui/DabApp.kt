@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iamburny.waveband.RadioController
 import com.iamburny.waveband.backend.DabServiceInfo
 import com.iamburny.waveband.data.AppSettings
+import com.iamburny.waveband.fm.FmBand
 import com.iamburny.waveband.ui.theme.Dab
 import com.iamburny.waveband.ui.theme.OnAccent
 import com.iamburny.waveband.ui.theme.dabText
@@ -57,6 +58,12 @@ enum class Screen(val label: String, val icon: ImageVector) {
 interface RadioActions {
     /** Tunes to [service] and starts playback through the media session. */
     fun play(service: DabServiceInfo)
+
+    /** Switches back to DAB: the current or last station if the tuner can play it. */
+    fun playDab()
+
+    /** Listens to the head unit's tuner on [band], at [frequency] if given. */
+    fun playFm(band: FmBand, frequency: Int? = null)
     fun togglePlayPause()
     fun connectTuner()
     fun connectDemo()

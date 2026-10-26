@@ -22,6 +22,7 @@ import com.iamburny.waveband.data.Accent
 import com.iamburny.waveband.data.AppSettings
 import com.iamburny.waveband.data.DisplayMode
 import com.iamburny.waveband.data.SettingsRepository
+import com.iamburny.waveband.data.Source
 import com.iamburny.waveband.data.Station
 import com.iamburny.waveband.data.StationRepository
 import com.iamburny.waveband.data.TunerOrigin
@@ -119,6 +120,11 @@ class RadioController(
         .flatMapLatest { o -> if (o == null) flowOf(emptyList()) else repository.presets(o) }
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    private val _source = MutableStateFlow<Source?>(null)
+
+    /** What the radio plays, DAB or the head unit's FM/AM tuner. Null until settings load. */
+    val source: StateFlow<Source?> = _source.asStateFlow()
+
     private val _alphabetical = MutableStateFlow(false)
 
     /** Whether the station list, and with it next/previous station, is in A–Z order. */
@@ -163,8 +169,9 @@ class RadioController(
             }
         })
         scope.launch {
-            val saved = settings.first { it != null }!!.lastOrigin
-            _origin.compareAndSet(null, saved)
+            val saved = settings.first { it != null }!!
+            _origin.compareAndSet(null, saved.lastOrigin)
+            _source.compareAndSet(null, saved.source)
         }
     }
 
@@ -288,6 +295,12 @@ class RadioController(
     fun findService(key: String): DabServiceInfo? =
         stations.value.firstOrNull { it.key == key }?.info ?: _state.value.current?.takeIf { it.key == key }
 
+    fun setSource(source: Source) {
+        if (_source.value == source) return
+        _source.value = source
+        scope.launch { settingsRepository.setSource(source) }
+    }
+
     fun setAlphabetical(enabled: Boolean) {
         _alphabetical.value = enabled
     }
@@ -318,6 +331,11 @@ class RadioController(
     fun clearPreset(slot: Int) {
         val o = _origin.value ?: return
         scope.launch(dbDispatcher) { repository.clearPreset(o, slot) }
+    }
+
+    fun swapPresets(a: Int, b: Int) {
+        val o = _origin.value ?: return
+        scope.launch(dbDispatcher) { repository.swapPresets(o, a, b) }
     }
 
     fun setDisplayMode(mode: DisplayMode) {

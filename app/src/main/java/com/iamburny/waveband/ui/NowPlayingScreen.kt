@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -36,13 +37,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iamburny.waveband.DabTunerApp
 import com.iamburny.waveband.RadioController
 import com.iamburny.waveband.RadioState
 import com.iamburny.waveband.backend.DabServiceInfo
 import com.iamburny.waveband.backend.ProgrammeType
 import com.iamburny.waveband.backend.TunerState
 import com.iamburny.waveband.data.AppSettings
+import com.iamburny.waveband.data.PresetKind
+import com.iamburny.waveband.data.QuickPresets
+import com.iamburny.waveband.data.Source
 import com.iamburny.waveband.data.Station
+import com.iamburny.waveband.fm.FmBand
 import com.iamburny.waveband.ui.theme.Dab
 import com.iamburny.waveband.ui.theme.OnAccent
 import com.iamburny.waveband.ui.theme.dabText
@@ -61,12 +67,36 @@ fun NowPlayingScreen(
     val state by radio.state.collectAsStateWithLifecycle()
     val stations by radio.stations.collectAsStateWithLifecycle()
     val presets by radio.presets.collectAsStateWithLifecycle()
+    val source by radio.source.collectAsStateWithLifecycle()
+    val fm = DabTunerApp.from(LocalContext.current).headUnitRadio
+    val fmState by fm.state.collectAsStateWithLifecycle()
+    val fmNames by DabTunerApp.from(LocalContext.current).fmStationNames.names.collectAsStateWithLifecycle()
     val current = state.current
     val station = current?.let { cur -> stations.firstOrNull { it.key == cur.key } }
+    // Only head units with their own tuner offer FM/AM.
+    val selectSource: ((ListenSource) -> Unit)? = if (!fmState.connected) null else { choice ->
+        when (choice) {
+            ListenSource.DAB -> if (source == Source.FM) actions.playDab()
+            ListenSource.FM -> actions.playFm(FmBand.FM)
+            ListenSource.AM -> actions.playFm(FmBand.AM)
+        }
+    }
+
+    if (source == Source.FM && selectSource != null) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            FmStatusRow(fmState, fm, selectSource)
+            FmPlaying(fmState, fmNames[fmState.key], presets.indexOf(fmState.key).takeIf { it >= 0 }, fm, actions, Modifier.weight(1f))
+            val band = fmState.band ?: FmBand.FM
+            // What a long-press saves: the frequency playing, while the tuner is on.
+            val playing = fmState.key?.takeIf { fmState.active }?.let { PresetItem.of(it, emptyList(), fmNames, tunerAvailable = true) }
+            QuickPresetStrip(presets, PresetKind.of(band), playing, stations, fmNames, fmState.connected, radio, actions)
+        }
+        return
+    }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         if (state.tunerOpen && current != null && state.scan == null) {
-            StatusRow(state, state.tuned ?: current)
+            StatusRow(state, state.tuned ?: current, selectSource)
             Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
                 Artwork(state, current, settings.slideshow)
                 StationInfo(
@@ -81,22 +111,29 @@ fun NowPlayingScreen(
                 )
             }
         } else {
+            if (selectSource != null) SourceSwitch(ListenSource.DAB, "DAB", selectSource)
             TunerCard(state, stations.isNotEmpty(), demoAvailable, radio, actions, onOpenStations, Modifier.weight(1f).fillMaxWidth())
         }
-        PresetStrip(presets.take(6), stations, current, radio, actions)
+        val playing = current?.let { PresetItem.DabStation(Station(it, favourite = station?.favourite == true)) }
+        QuickPresetStrip(presets, PresetKind.DAB, playing, stations, fmNames, fmState.connected, radio, actions)
     }
 }
 
 @Composable
-private fun StatusRow(state: RadioState, service: DabServiceInfo) {
+private fun StatusRow(state: RadioState, service: DabServiceInfo, selectSource: ((ListenSource) -> Unit)?) {
     val c = Dab.colors
     Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(
-            if (service.isDabPlus) "DAB+" else "DAB",
-            style = dabText(20, FontWeight.ExtraBold, letterSpacing = 0.5.sp),
-            color = c.text,
-            modifier = Modifier.background(c.btn, CircleShape).padding(horizontal = 16.dp, vertical = 8.dp),
-        )
+        val dab = if (service.isDabPlus) "DAB+" else "DAB"
+        if (selectSource != null) {
+            SourceSwitch(ListenSource.DAB, dab, selectSource)
+        } else {
+            Text(
+                dab,
+                style = dabText(20, FontWeight.ExtraBold, letterSpacing = 0.5.sp),
+                color = c.text,
+                modifier = Modifier.background(c.btn, CircleShape).padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
         val ensemble = listOf(service.ensembleLabel.ifBlank { null }, "Block ${service.channelLabel}").filterNotNull().joinToString(" · ")
         Text(ensemble, style = dabText(22, FontWeight.SemiBold), color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         val audio = listOfNotNull(
@@ -278,52 +315,96 @@ private fun TunerCard(
 }
 
 @Composable
-private fun PresetStrip(
-    slots: List<String?>,
+private fun QuickPresetStrip(
+    presets: List<String?>,
+    kind: PresetKind,
+    current: PresetItem?,
     stations: List<Station>,
-    current: DabServiceInfo?,
+    fmNames: Map<String, String>,
+    tunerAvailable: Boolean,
+    radio: RadioController,
+    actions: RadioActions,
+) {
+    val slots = QuickPresets.slots(presets, kind)
+    PresetStrip(slots.map { slot -> PresetItem.of(slot?.let(presets::getOrNull), stations, fmNames, tunerAvailable) }, slots, current, radio, actions)
+}
+
+/**
+ * The quick presets, each tile backed by the preset [slots] it shows and numbered as on the
+ * Presets page. Tap to play, long-press to save [current] there, drag one onto another to swap
+ * them. Empty tiles aren't drop targets: the strip lists presets in slot order, so moving one
+ * into a free slot wouldn't put it where it was dropped.
+ */
+@Composable
+private fun PresetStrip(
+    items: List<PresetItem?>,
+    slots: List<Int?>,
+    current: PresetItem?,
     radio: RadioController,
     actions: RadioActions,
 ) {
     val c = Dab.colors
+    val drag = rememberPresetDragState(QuickPresets.COUNT, droppable = { items.getOrNull(it) != null }) { a, b ->
+        val from = slots.getOrNull(a)
+        val to = slots.getOrNull(b)
+        if (from != null && to != null) radio.swapPresets(from, to)
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        for (slot in 0 until 6) {
-            val key = slots.getOrNull(slot)
-            val station = key?.let { k -> stations.firstOrNull { it.key == k } }
+        for (position in 0 until QuickPresets.COUNT) {
+            val station = items.getOrNull(position)
+            val slot = slots.getOrNull(position)
             val shape = RoundedCornerShape(20.dp)
             val selected = station != null && station.key == current?.key
-            val base = Modifier.weight(1f).height(104.dp)
+            val number = slot?.let { it + 1 }
+            val base = Modifier.weight(1f).height(104.dp).presetDrag(drag, position, enabled = station != null) { other ->
+                slots.getOrNull(other)?.let { "preset ${it + 1}" } ?: "another preset"
+            }
             val decorated = when {
+                drag.target == position -> base.background(c.selectedBg, shape).dabBorder(3.dp, c.accent, shape)
                 station == null -> base.dashedBorder(3.dp, c.emptyBorder, 20.dp)
                 selected -> base.background(c.selectedBg, shape).dabBorder(3.dp, c.accent, shape)
                 else -> base.background(c.nowCard, shape).dabBorder(3.dp, c.idleBorder, shape)
             }
-            val saveCurrent = { current?.let { radio.setPreset(slot, it.key) } ?: Unit }
+            val saveCurrent: (() -> Unit)? = if (slot != null && current != null) ({ radio.setPreset(slot, current.key) }) else null
             Column(
                 decorated
                     .pressable(
                         shape,
-                        onClickLabel = if (station != null) "Play" else "Save current station",
-                        onLongClickLabel = "Save current station",
-                        onLongClick = if (current != null) saveCurrent else null,
-                    ) { if (station != null) actions.play(station.info) else saveCurrent() }
+                        onClickLabel = if (station != null) "Play" else "Save what's playing",
+                        onLongClickLabel = "Save what's playing",
+                        onLongClick = saveCurrent,
+                    ) {
+                        when (station) {
+                            null -> saveCurrent?.invoke()
+                            is PresetItem.DabStation -> actions.play(station.station.info)
+                            is PresetItem.Tuner -> if (station.available) actions.playFm(station.band, station.frequency)
+                        }
+                    }
                     .semantics {
-                        contentDescription = if (station != null) "Preset ${slot + 1}, ${station.info.label}" else "Empty preset ${slot + 1}"
+                        contentDescription = when (station) {
+                            null -> if (number != null) "Empty preset $number" else "No free preset"
+                            is PresetItem.Tuner -> "Preset $number, ${listOfNotNull(station.name, station.frequencyLabel).joinToString(", ")}"
+                            else -> "Preset $number, ${station.title}"
+                        }
                     }
                     .padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
                 // A saved preset gives the slot number's line to the station name.
                 if (station == null) {
-                    Text("${slot + 1}", style = dabText(18, FontWeight.ExtraBold), color = c.muted)
+                    Text(number?.toString() ?: "–", style = dabText(18, FontWeight.ExtraBold), color = c.muted)
                 }
                 Text(
-                    station?.info?.label ?: "+ Save",
+                    station?.title ?: if (slot != null) "+ Save" else "Presets full",
                     style = dabText(22, FontWeight.Bold, lineHeight = 26.sp),
-                    color = if (station != null) c.text else c.muted,
-                    maxLines = if (station != null) 2 else 1,
+                    color = if (station != null && (station !is PresetItem.Tuner || station.available)) c.text else c.muted,
+                    maxLines = if (station is PresetItem.DabStation) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // An FM/AM preset shows its frequency, so it isn't taken for a DAB station.
+                if (station is PresetItem.Tuner && (station.name != null || !station.available)) {
+                    Text(station.frequencyLabel, style = dabText(18, FontWeight.SemiBold), color = c.muted, maxLines = 1)
+                }
             }
         }
     }

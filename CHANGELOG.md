@@ -6,6 +6,28 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-26
+
+### Added
+
+- FM and AM from the head unit's own tuner, on Choiceway head units that have one (such as the
+  GT6). A DAB · FM · AM switch on the Playing screen moves between them. The FM/AM view shows the
+  frequency and RDS station name, with seek, fine tuning and a Local/DX sensitivity switch, and
+  the last source is remembered.
+- Presets can hold FM and AM frequencies as well as DAB stations, so one tap moves between sources.
+  The quick presets on the Playing screen show the first six for DAB, FM or AM, whichever is
+  playing, and steering-wheel next/previous step through them.
+- FM station names are remembered from RDS and shown on presets.
+- Presets can be rearranged by dragging one onto another, on the Presets page and on the quick
+  presets.
+- A station can only be saved to one preset: saving it to another moves it there.
+
+### Fixed
+
+- The radio now takes audio focus while playing. It pauses when another app starts playing, pauses
+  during calls and resumes afterwards, lowers its volume for navigation prompts, and takes the
+  speakers back from the head unit's own FM radio when you press play.
+
 ## [0.1.3] - 2026-10-25
 
 ### Fixed
@@ -72,7 +94,8 @@ First test release, published to the Google Play internal testing track.
 - Only one USB tuner type is supported so far.
 - Requires Android 7.0 (API 24) or later.
 
-[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/iamburny/waveband-radio/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/iamburny/waveband-radio/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/iamburny/waveband-radio/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/iamburny/waveband-radio/compare/v0.1.0...v0.1.1

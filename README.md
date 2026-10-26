@@ -29,11 +29,17 @@ implementations:
   tap to play, tap an empty slot or long-press any slot to save the current station. Without a
   tuner this screen offers **Connect tuner** (and **Demo tuner** in debug builds); while scanning
   it shows the scan.
+  On head units with their own FM/AM tuner (see Supported hardware), a DAB · FM · AM switch
+  replaces the DAB badge. FM and AM show the frequency, the RDS station name, stereo/RDS/traffic
+  flags, fine tuning (50 kHz FM, 9 kHz AM) and seek down/up, play/pause, and the tuner's own six
+  presets for the band: tap to listen, long-press to save the current frequency. Station names
+  heard over RDS are remembered per frequency and shown on presets.
 - **Stations**: all saved stations grouped by ensemble, or A–Z. Filters: Favourites, Music, Talk
   (from the programme type; stations without one appear only under All). Tap to play, heart to
   favourite.
-- **Presets**: 12 presets. Tap plays, long-press saves the current station, an empty tile saves on
-  tap. **Edit** shows a clear button on each preset; tapping a tile then saves the current station
+- **Presets**: 12 presets, each a DAB station or (on head units with their own tuner) an FM/AM
+  frequency. Tap plays, switching source if needed; long-press saves what's playing, an empty tile
+  saves on tap. **Edit** shows a clear button on each preset; tapping a tile then saves the current station
   there.
 - **Settings**: full Band III scan (5A–13F) with progress and a cancel button; traffic
   announcements; slideshow images; station logos; display mode (Auto follows the system's night mode, which head
@@ -128,6 +134,13 @@ buttons.
 `16C0:05DC` (a USB DAB+ receiver with a Raontech demodulator behind a USB bridge). The ID is a
 shared one, so on open the backend sends the bridge's echo and version commands and refuses the
 device if it does not answer.
+
+FM/AM: Choiceway head units (for example the GT6-CAR) whose vendor service
+`com.szchoiceway.eventcenter` controls a built-in tuner. The app detects it and validates the
+service before offering FM/AM; elsewhere the switch is hidden. The tuner's sound is switched by the
+head unit, so the app holds audio focus while it plays: starting FM pauses DAB and other players,
+and playing DAB or another app switches FM off. The head unit's own radio app can take over the
+tuner without switching it off.
 
 ## Testing on real hardware
 

@@ -29,8 +29,8 @@ android {
         applicationId = "com.iamburny.waveband"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -63,6 +63,11 @@ android {
     }
 
     buildTypes {
+        // Debug builds install alongside the Play build, with their own stations and settings.
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfig = signingConfigs.findByName("release")
             // Ships native symbol tables in the bundle so Play Console can symbolicate native crashes.

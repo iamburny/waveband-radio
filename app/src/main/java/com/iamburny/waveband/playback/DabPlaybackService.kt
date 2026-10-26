@@ -20,6 +20,9 @@ import com.iamburny.waveband.Monogram
 import com.iamburny.waveband.R
 import com.iamburny.waveband.RadioController
 import com.iamburny.waveband.backend.DabServiceInfo
+import com.iamburny.waveband.fm.FmBand
+import com.iamburny.waveband.fm.FmState
+import com.iamburny.waveband.fm.HeadUnitRadio
 import com.iamburny.waveband.logos.RadioDns
 import com.iamburny.waveband.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 
@@ -43,9 +47,11 @@ class DabPlaybackService : MediaSessionService() {
     private lateinit var radio: RadioController
     private lateinit var sink: AudioTrackSink
     private lateinit var player: DabPlayer
+    private lateinit var fm: HeadUnitRadio
     private var session: MediaSession? = null
     private var monogramCache: Pair<String, ByteArray>? = null
     private var logoCache: Pair<String, ByteArray>? = null
+    private var fmTileCache: Pair<String, ByteArray>? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -53,7 +59,10 @@ class DabPlaybackService : MediaSessionService() {
         radio = DabTunerApp.radio(this)
         sink = AudioTrackSink()
         radio.pcmSink = sink
-        player = DabPlayer(Looper.getMainLooper(), radio, sink)
+        fm = DabTunerApp.from(this).headUnitRadio
+        // Learns station names while FM plays, also when started from the steering wheel without the app open.
+        DabTunerApp.from(this).fmStationNames
+        player = DabPlayer(this, Looper.getMainLooper(), radio, sink, fm)
 
         val openUi = PendingIntent.getActivity(
             this, 0,
@@ -63,6 +72,9 @@ class DabPlaybackService : MediaSessionService() {
         session = MediaSession.Builder(this, player)
             .setSessionActivity(openUi)
             .setCallback(SessionCallback())
+            // While a call or prompt silences the radio it still counts as playing, so
+            // play/pause buttons pause it instead of doing nothing.
+            .setShowPlayButtonIfPlaybackIsSuppressed(false)
             .build()
 
         val logos = DabTunerApp.from(this).stationLogos
@@ -83,6 +95,49 @@ class DabPlaybackService : MediaSessionService() {
                 .distinctUntilChanged()
                 .collect(player::onNowPlayingChanged)
         }
+        scope.launch {
+            fm.state
+                .map { FmNowPlaying(it, fmArtwork(it)) }
+                .flowOn(Dispatchers.Default)
+                .distinctUntilChanged()
+                .collect(player::onFmChanged)
+        }
+        scope.launch { radio.source.collect { player.onSourceChanged() } }
+        scope.launch { fm.skipRequests.collect(player::skipFm) }
+    }
+
+    /** PNG tile with the band and frequency, cached while they are unchanged. Called on a background thread. */
+    private fun fmArtwork(state: FmState): ByteArray? {
+        val band = state.band ?: return null
+        val frequency = when (band) {
+            FmBand.FM -> "%d.%02d".format(state.frequency / 100, state.frequency % 100)
+            FmBand.AM -> "${state.frequency}"
+        }
+        val key = "${band.name} $frequency"
+        fmTileCache?.let { (cached, png) -> if (cached == key) return png }
+        val size = 320
+        val bitmap = createBitmap(size, size)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(FM_TILE_COLOUR)
+        val font = ResourcesCompat.getFont(this, R.font.manrope_extrabold)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            typeface = font
+        }
+        paint.textSize = 64f
+        canvas.drawText(band.name, size / 2f, 120f, paint)
+        paint.textSize = if (frequency.length > 5) 76f else 88f
+        canvas.drawText(frequency, size / 2f, 220f, paint)
+        paint.textSize = 40f
+        canvas.drawText(if (band == FmBand.FM) "MHz" else "kHz", size / 2f, 276f, paint)
+        val png = ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.toByteArray()
+        }
+        bitmap.recycle()
+        fmTileCache = key to png
+        return png
     }
 
     /**
@@ -124,6 +179,10 @@ class DabPlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
+    private companion object {
+        val FM_TILE_COLOUR = Color.rgb(0x2E, 0x4A, 0x6B)
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         if (!player.playWhenReady) stopSelf()
     }
@@ -148,7 +207,8 @@ class DabPlaybackService : MediaSessionService() {
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
             val resolved = mediaItems.mapNotNull { item ->
-                radio.findService(item.mediaId)?.let(DabPlayer::mediaItemFor)
+                if (item.mediaId == DabPlayer.FM_MEDIA_ID) DabPlayer.fmMediaItem().takeIf { fm.state.value.connected }
+                else radio.findService(item.mediaId)?.let(DabPlayer::mediaItemFor)
             }.toMutableList()
             if (resolved.isEmpty()) {
                 return Futures.immediateFailedFuture(IllegalArgumentException("Unknown station; scan first"))

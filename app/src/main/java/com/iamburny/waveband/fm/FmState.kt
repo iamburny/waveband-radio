@@ -84,6 +84,12 @@ data class FmState(
     val rds: Boolean = false,
     val alternativeFrequencies: Boolean = false,
     val local: Boolean = false,
+    /** FM plays in mono rather than stereo. */
+    val mono: Boolean = false,
+    /** Whether the tuner decodes RDS, or null if it hasn't said. */
+    val rdsEnabled: Boolean? = null,
+    /** The tuner's region (band limits and steps), see [FmState.regionLabel]; null if unknown. */
+    val region: Int? = null,
     val scanning: Boolean = false,
     /** Presets of all bands, see [FmCodec]. */
     val presets: List<Int> = emptyList(),
@@ -94,6 +100,12 @@ data class FmState(
 
     val bandPresets: List<Int> get() = FmCodec.presetsOf(bandNumber, presets)
 
+    val regionLabel: String? get() = region?.let(REGIONS::getOrNull)
+
     /** [FmKey] of the tuned frequency, or null while the band or frequency is unknown. */
     val key: String? get() = band?.takeIf { FmCodec.isValid(it, frequency) }?.let { FmKey.of(it, frequency) }
+
+    private companion object {
+        val REGIONS = listOf("Europe", "North America", "South America", "Russia", "Japan")
+    }
 }

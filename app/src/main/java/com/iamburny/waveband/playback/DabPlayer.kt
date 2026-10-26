@@ -110,12 +110,17 @@ class DabPlayer(
     /** Called by the service when the head unit tuner's state changes. */
     fun onFmChanged(now: FmNowPlaying) {
         // Whoever switched the tuner on (the app's own screen included), it is now the source.
-        if (now.state.ours && !fmNow.state.ours) radio.setSource(Source.FM)
+        if (now.state.ours && !fmNow.state.ours) {
+            radio.setSource(Source.FM)
+            // Switched on just as the tuner was turned off in Settings.
+            if (radio.source.value != Source.FM) fm.deactivate()
+        }
         if (!now.state.ours && fmNow.state.ours && fmWant != false) {
             playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
         }
         if (fmWant == now.state.ours) fmWant = null
         fmNow = now
+        silenceStrayTuner()
         invalidateState()
     }
 
@@ -335,6 +340,17 @@ class DabPlayer(
         val volume = if (focus.ducked) DUCK_VOLUME else 1f
         if (sink.volume != volume) sink.volume = volume
         if (sink.playing != audible) sink.playing = audible
+        silenceStrayTuner()
+    }
+
+    /**
+     * Switches the head unit's tuner off when it plays over DAB without anyone holding focus for
+     * it, as after the app was stopped while listening to FM. Its audio bypasses Android, so it
+     * isn't silenced by DAB taking focus.
+     */
+    private fun silenceStrayTuner() {
+        val f = fmNow.state
+        if (sink.playing && !onFm && f.connected && f.active && !f.ours) fm.deactivate()
     }
 
     private fun onFocusChanged(lostForGood: Boolean) {

@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,34 +95,17 @@ fun FmStatusRow(state: FmState, fm: HeadUnitRadio, onSelectSource: (ListenSource
     }
 }
 
-/**
- * Shows the tuner's sensitivity; Local only stops on strong stations when seeking. The tuner key
- * flips the setting, and the tuner takes a moment to report the new one, so the expected setting
- * is shown meanwhile and further taps wait for it: each would flip it again.
- */
+/** Shows the tuner's sensitivity; Local only stops on strong stations when seeking. */
 @Composable
 private fun LocalToggle(reported: Boolean, onToggle: () -> Unit) {
     val c = Dab.colors
     val shape = RoundedCornerShape(24.dp)
-    var pending by remember { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(pending, reported) {
-        if (pending == reported) pending = null
-        if (pending != null) {
-            delay(LOCAL_CONFIRM_MS)
-            pending = null
-        }
-    }
-    val local = pending ?: reported
+    val (local, toggle) = rememberTunerToggle(reported, onToggle)
     Box(
         Modifier
             .height(48.dp)
             .background(if (local) c.accent else c.btn, shape)
-            .pressable(shape, onClickLabel = if (local) "Switch to DX, to find weaker stations" else "Switch to Local, to find only strong stations") {
-                if (pending == null) {
-                    pending = !reported
-                    onToggle()
-                }
-            }
+            .pressable(shape, onClickLabel = if (local) "Switch to DX, to find weaker stations" else "Switch to Local, to find only strong stations", onClick = toggle)
             .semantics { contentDescription = if (local) "Sensitivity: Local" else "Sensitivity: DX" }
             .padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center,
@@ -130,7 +114,32 @@ private fun LocalToggle(reported: Boolean, onToggle: () -> Unit) {
     }
 }
 
-private const val LOCAL_CONFIRM_MS = 3_000L
+/**
+ * A tuner setting that a tap flips and the tuner then reports back: returns the setting to show
+ * and the tap handler. The tuner takes a moment to report the new setting, so the expected one
+ * is shown meanwhile and further taps wait for it, as each would flip it again.
+ */
+@Composable
+fun rememberTunerToggle(reported: Boolean, flip: () -> Unit): Pair<Boolean, () -> Unit> {
+    var pending by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(pending, reported) {
+        if (pending == reported) pending = null
+        if (pending != null) {
+            delay(TUNER_CONFIRM_MS)
+            pending = null
+        }
+    }
+    val flipNow by rememberUpdatedState(flip)
+    val shown = pending ?: reported
+    return shown to {
+        if (pending == null) {
+            pending = !reported
+            flipNow()
+        }
+    }
+}
+
+private const val TUNER_CONFIRM_MS = 3_000L
 
 /** Frequency tile and tuner controls for the head unit's FM/AM tuner; [presetSlot] is the Waveband preset playing, if any. */
 @Composable

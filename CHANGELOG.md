@@ -6,6 +6,17 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-26
+
+### Added
+
+- Settings for the head unit's FM/AM tuner: turn FM and AM off altogether, Local or DX seeking,
+  mono, RDS on or off, and the tuner's region.
+
+### Fixed
+
+- If the app was stopped while FM was playing, starting DAB no longer plays over the head unit's
+  tuner, and reopening the app no longer starts DAB on top of FM.
 ## [0.1.4] - 2026-10-26
 
 ### Added
@@ -94,7 +105,8 @@ First test release, published to the Google Play internal testing track.
 - Only one USB tuner type is supported so far.
 - Requires Android 7.0 (API 24) or later.
 
-[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/iamburny/waveband-radio/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/iamburny/waveband-radio/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/iamburny/waveband-radio/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/iamburny/waveband-radio/compare/v0.1.1...v0.1.2

@@ -47,10 +47,12 @@ fun PresetsScreen(radio: RadioController, actions: RadioActions) {
     val app = DabTunerApp.from(LocalContext.current)
     val fmState by app.headUnitRadio.state.collectAsStateWithLifecycle()
     val fmNames by app.fmStationNames.names.collectAsStateWithLifecycle()
+    val settings by radio.settings.collectAsStateWithLifecycle()
+    val tunerAvailable = fmState.connected && settings?.headUnitTuner != false
     var editing by rememberSaveable { mutableStateOf(false) }
     val drag = rememberPresetDragState(PRESET_COUNT) { a, b -> radio.swapPresets(a, b) }
     // What a long-press saves: the FM/AM frequency while listening to the tuner, else the DAB station.
-    val current = if (source == Source.FM && fmState.connected && fmState.active) {
+    val current = if (source == Source.FM && tunerAvailable && fmState.active) {
         PresetItem.of(fmState.key, emptyList(), fmNames, tunerAvailable = true)
     } else {
         state.current?.let { cur -> PresetItem.of(cur.key, stations, fmNames, false) }
@@ -85,7 +87,7 @@ fun PresetsScreen(radio: RadioController, actions: RadioActions) {
                         if (slot >= PRESET_COUNT) continue
                         PresetTile(
                             slot = slot,
-                            item = PresetItem.of(presets.getOrNull(slot), stations, fmNames, fmState.connected),
+                            item = PresetItem.of(presets.getOrNull(slot), stations, fmNames, tunerAvailable),
                             current = current,
                             editing = editing,
                             drag = drag,

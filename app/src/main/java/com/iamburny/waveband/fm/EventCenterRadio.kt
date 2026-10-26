@@ -350,6 +350,12 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
 
     override fun toggleLocal() = command { key(KEY_LOCAL_DX) }
 
+    override fun toggleMono() = command { key(KEY_STEREO_MONO) }
+
+    override fun setRdsEnabled(enabled: Boolean) = command {
+        call(Txn.CHANGE_SETUP) { writeString(SETTING_RDS); writeString(if (enabled) "1" else "0") }
+    }
+
     override fun recallPreset(slot: Int) = command {
         require(slot in 0 until FmCodec.PRESETS_PER_BAND)
         key(KEY_PRESET_1 + slot)
@@ -399,12 +405,15 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
         }
         _problem.value = null
         _state.update { it.copy(connected = true) }
-        read()
-        polling = io.scheduleWithFixedDelay(::read, POLL_MS, POLL_MS, TimeUnit.MILLISECONDS)
+        read(withSettings = true)
+        polling = io.scheduleWithFixedDelay({ read() }, POLL_MS, POLL_MS, TimeUnit.MILLISECONDS)
     }
 
-    /** Reads the service's cached tuner state. Runs on [io]. */
-    private fun read() {
+    /**
+     * Reads the service's cached tuner state, and [withSettings] the settings that only change
+     * when someone changes them. Runs on [io].
+     */
+    private fun read(withSettings: Boolean = false) {
         if (service == null) return
         try {
             val band = callInt(Txn.GET_BAND)
@@ -419,6 +428,11 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
             val rds = callBoolean(Txn.GET_RDS)
             val af = callBoolean(Txn.GET_AF)
             val local = callBoolean(Txn.GET_LOCAL)
+            // Calls other firmware may lack: one failing leaves that value unknown, not the rest.
+            val mono = optional { !callBoolean(Txn.GET_STEREO_MODE) }
+            // RDS is on until someone turns it off.
+            val rdsEnabled = if (withSettings) optional { setting(SETTING_RDS) != "0" } else _state.value.rdsEnabled
+            val region = if (withSettings) optional { setting(SETTING_REGION)?.toIntOrNull()?.takeIf { it in 0..4 } } else _state.value.region
             val scanning = callBoolean(Txn.GET_SCANNING)
             if (service == null) return
             _state.update {
@@ -435,6 +449,9 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
                     rds = rds,
                     alternativeFrequencies = af,
                     local = local,
+                    mono = mono ?: it.mono,
+                    rdsEnabled = rdsEnabled,
+                    region = region,
                     scanning = scanning,
                     presets = presets?.toList() ?: it.presets,
                 )
@@ -465,7 +482,7 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
                 } catch (e: RuntimeException) {
                     Log.w(TAG, "radio command failed", e)
                 }
-                read()
+                read(withSettings = true)
             } finally {
                 after()
             }
@@ -498,6 +515,18 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
     private fun callString(txn: Int): String? = transact(txn, {}) { readString() }
     private fun callIntArray(txn: Int): IntArray? = transact(txn, {}) { createIntArray() }
 
+    private fun <T> optional(read: () -> T): T? = try {
+        read()
+    } catch (e: RemoteException) {
+        null
+    } catch (e: RuntimeException) {
+        null
+    }
+
+    /** A setting the vendor service keeps, or null if it has none under [key]. */
+    private fun setting(key: String): String? =
+        transact(Txn.GET_SETTING_STRING, { writeString(key); writeString("") }) { readString() }?.ifEmpty { null }
+
     /** Transaction codes of the radio calls on the service interface. */
     private object Txn {
         const val SEND_MODE = 1
@@ -512,13 +541,19 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
         const val GET_STATION_NAME = 19
         const val GET_AF = 20
         const val GET_TA = 21
+        // True while FM is set to stereo, false for mono.
+        const val GET_STEREO_MODE = 22
         const val GET_LOCAL = 23
         const val GET_SCANNING = 24
         const val GET_STEREO_ICON = 26
         const val GET_TP_ICON = 27
         const val SET_MODE_CALLBACK = 30
+        // Reads the service's own settings store.
+        const val GET_SETTING_STRING = 44
         const val EXIT_MODE = 31
         const val GET_VALID_MODE = 46
+        // Saves a setting and applies it, such as sending it on to the tuner.
+        const val CHANGE_SETUP = 78
     }
 
     companion object {
@@ -550,6 +585,10 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
         private const val EXTRA_FREQUENCY = "RadioCurFreq"
         private const val EXTRA_STATION_NAME = "RadioRDSInfor"
 
+        // Keys in the service's settings store.
+        private const val SETTING_RDS = "SYS_RDS_OnOff"
+        private const val SETTING_REGION = "COM.SZCHOICEWAY_RADIO_ZONE_SETTINGS"
+
         /** The service's source number for the FM/AM tuner. */
         private const val MODE_RADIO = 1
 
@@ -560,6 +599,7 @@ class EventCenterRadio(context: Context) : HeadUnitRadio {
         private const val KEY_STEP_UP = 15
         private const val KEY_SEEK_DOWN = 16
         private const val KEY_SEEK_UP = 17
+        private const val KEY_STEREO_MONO = 19
         private const val KEY_LOCAL_DX = 20
         private const val KEY_FM = 30
         private const val KEY_AM = 31

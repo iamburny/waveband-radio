@@ -30,6 +30,8 @@ data class AppSettings(
     val lastStationKey: String? = null,
     val lastOrigin: TunerOrigin = TunerOrigin.USB,
     val source: Source = Source.DAB,
+    /** Offer the head unit's own FM/AM tuner, where there is one. */
+    val headUnitTuner: Boolean = true,
 )
 
 private val Context.settingsStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -49,6 +51,7 @@ class SettingsRepository(context: Context) {
             lastStationKey = p[LAST_STATION],
             lastOrigin = p[LAST_ORIGIN].toEnum(TunerOrigin.USB),
             source = p[SOURCE].toEnum(Source.DAB),
+            headUnitTuner = p[HEAD_UNIT_TUNER] ?: true,
         )
     }
 
@@ -71,6 +74,8 @@ class SettingsRepository(context: Context) {
 
     suspend fun setSource(source: Source) = store.edit { it[SOURCE] = source.name }
 
+    suspend fun setHeadUnitTuner(enabled: Boolean) = store.edit { it[HEAD_UNIT_TUNER] = enabled }
+
     private companion object {
         val DISPLAY_MODE = stringPreferencesKey("display_mode")
         val ACCENT = stringPreferencesKey("accent")
@@ -81,6 +86,7 @@ class SettingsRepository(context: Context) {
         val LAST_STATION = stringPreferencesKey("last_station")
         val LAST_ORIGIN = stringPreferencesKey("last_origin")
         val SOURCE = stringPreferencesKey("source")
+        val HEAD_UNIT_TUNER = booleanPreferencesKey("head_unit_tuner")
 
         inline fun <reified E : Enum<E>> String?.toEnum(default: E): E =
             this?.let { name -> enumValues<E>().firstOrNull { it.name == name } } ?: default

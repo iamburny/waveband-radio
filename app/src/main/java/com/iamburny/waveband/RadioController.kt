@@ -171,7 +171,7 @@ class RadioController(
         scope.launch {
             val saved = settings.first { it != null }!!
             _origin.compareAndSet(null, saved.lastOrigin)
-            _source.compareAndSet(null, saved.source)
+            _source.compareAndSet(null, if (saved.headUnitTuner) saved.source else Source.DAB)
         }
     }
 
@@ -295,7 +295,15 @@ class RadioController(
     fun findService(key: String): DabServiceInfo? =
         stations.value.firstOrNull { it.key == key }?.info ?: _state.value.current?.takeIf { it.key == key }
 
+    /** Turning the head unit's tuner off moves listening back to DAB. */
+    fun setHeadUnitTuner(enabled: Boolean) {
+        if (!enabled) setSource(Source.DAB)
+        scope.launch { settingsRepository.setHeadUnitTuner(enabled) }
+    }
+
+    /** FM is refused while the head unit's tuner is turned off in Settings. */
     fun setSource(source: Source) {
+        if (source == Source.FM && settings.value?.headUnitTuner == false) return
         if (_source.value == source) return
         _source.value = source
         scope.launch { settingsRepository.setSource(source) }

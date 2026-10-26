@@ -207,7 +207,7 @@ class DabPlaybackService : MediaSessionService() {
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
             val resolved = mediaItems.mapNotNull { item ->
-                if (item.mediaId == DabPlayer.FM_MEDIA_ID) DabPlayer.fmMediaItem().takeIf { fm.state.value.connected }
+                if (item.mediaId == DabPlayer.FM_MEDIA_ID) DabPlayer.fmMediaItem().takeIf { fm.state.value.connected && radio.settings.value?.headUnitTuner != false }
                 else radio.findService(item.mediaId)?.let(DabPlayer::mediaItemFor)
             }.toMutableList()
             if (resolved.isEmpty()) {

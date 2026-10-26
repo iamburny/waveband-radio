@@ -64,6 +64,12 @@ interface HeadUnitRadio {
     /** Switches between Local, which only stops on strong stations, and DX (distant). */
     fun toggleLocal()
 
+    /** Switches FM between stereo and mono. */
+    fun toggleMono()
+
+    /** Turns RDS decoding on or off; the tuner keeps the setting. */
+    fun setRdsEnabled(enabled: Boolean)
+
     /** Saves the current frequency to [slot] 0-5 of the current band. */
     fun storePreset(slot: Int)
 }

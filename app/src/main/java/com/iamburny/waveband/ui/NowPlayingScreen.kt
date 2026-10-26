@@ -74,7 +74,8 @@ fun NowPlayingScreen(
     val current = state.current
     val station = current?.let { cur -> stations.firstOrNull { it.key == cur.key } }
     // Only head units with their own tuner offer FM/AM.
-    val selectSource: ((ListenSource) -> Unit)? = if (!fmState.connected) null else { choice ->
+    val tunerAvailable = fmState.connected && settings.headUnitTuner
+    val selectSource: ((ListenSource) -> Unit)? = if (!tunerAvailable) null else { choice ->
         when (choice) {
             ListenSource.DAB -> if (source == Source.FM) actions.playDab()
             ListenSource.FM -> actions.playFm(FmBand.FM)
@@ -89,7 +90,7 @@ fun NowPlayingScreen(
             val band = fmState.band ?: FmBand.FM
             // What a long-press saves: the frequency playing, while the tuner is on.
             val playing = fmState.key?.takeIf { fmState.active }?.let { PresetItem.of(it, emptyList(), fmNames, tunerAvailable = true) }
-            QuickPresetStrip(presets, PresetKind.of(band), playing, stations, fmNames, fmState.connected, radio, actions)
+            QuickPresetStrip(presets, PresetKind.of(band), playing, stations, fmNames, tunerAvailable, radio, actions)
         }
         return
     }
@@ -115,7 +116,7 @@ fun NowPlayingScreen(
             TunerCard(state, stations.isNotEmpty(), demoAvailable, radio, actions, onOpenStations, Modifier.weight(1f).fillMaxWidth())
         }
         val playing = current?.let { PresetItem.DabStation(Station(it, favourite = station?.favourite == true)) }
-        QuickPresetStrip(presets, PresetKind.DAB, playing, stations, fmNames, fmState.connected, radio, actions)
+        QuickPresetStrip(presets, PresetKind.DAB, playing, stations, fmNames, tunerAvailable, radio, actions)
     }
 }
 

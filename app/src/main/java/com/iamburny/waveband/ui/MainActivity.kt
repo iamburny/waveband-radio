@@ -199,8 +199,9 @@ class MainActivity : ComponentActivity() {
         radio.consumeTunerOpened()
         if (radio.state.value.current != null) return
         val settings = radio.settings.first { it != null }!!
-        // Listening to FM/AM: the tuner stays ready, but doesn't take over.
-        if (settings.source == Source.FM && DabTunerApp.from(this).headUnitRadio.state.value.connected) return
+        // Listening to FM/AM: the tuner stays ready, but doesn't take over. The head unit's tuner may
+        // still be connecting, and may still be playing from before the app was stopped.
+        if (settings.source == Source.FM) return
         val key = settings.lastStationKey ?: return
         if (settings.lastOrigin != origin) return
         val station = radio.savedStation(origin, key) ?: return

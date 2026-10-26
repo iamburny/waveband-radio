@@ -36,6 +36,8 @@ class FakeHeadUnitRadio(context: Context) : HeadUnitRadio {
             stationName = NAMES[8950].orEmpty(),
             stereo = true,
             rds = true,
+            rdsEnabled = true,
+            region = 0,
             presets = listOf(
                 8950, 9170, 9390, 9520, 9910, 10130,
                 8750, 9000, 9800, 10430, 10800, 8750,
@@ -97,6 +99,10 @@ class FakeHeadUnitRadio(context: Context) : HeadUnitRadio {
     }
 
     override fun toggleLocal() = _state.update { it.copy(local = !it.local) }
+
+    override fun toggleMono() = _state.update { it.copy(mono = !it.mono, stereo = it.mono && it.stationName.isNotEmpty()) }
+
+    override fun setRdsEnabled(enabled: Boolean) = _state.update { it.copy(rdsEnabled = enabled) }
 
     override fun recallPreset(slot: Int) {
         val s = _state.value

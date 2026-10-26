@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iamburny.waveband.DabTunerApp
 import com.iamburny.waveband.RadioController
 import com.iamburny.waveband.RadioState
 import com.iamburny.waveband.backend.BandIII
@@ -96,6 +98,7 @@ fun SettingsScreen(
                 // Only one region exists so far, so the row shows it without leading anywhere.
                 LinkRow("Region", settings.region.label, onClick = null)
                 TunerRow(state, demoAvailable, radio, actions)
+                HeadUnitTunerRows(settings, radio)
                 LinkRow("Open-source licences", null, onOpenLicences)
             }
         }
@@ -264,6 +267,28 @@ private fun LinkRow(title: String, value: String?, onClick: (() -> Unit)?) {
         if (value != null) Text(value, style = dabText(22), color = c.muted, maxLines = 1)
         if (onClick != null) Icon(DabIcons.Chevron, contentDescription = null, tint = c.muted, modifier = Modifier.size(32.dp))
     }
+}
+
+/** Settings of the head unit's own FM/AM tuner, on head units that have one. */
+@Composable
+private fun HeadUnitTunerRows(settings: AppSettings, radio: RadioController) {
+    val fm = DabTunerApp.from(LocalContext.current).headUnitRadio
+    val fmState by fm.state.collectAsStateWithLifecycle()
+    if (!fmState.connected) return
+    ToggleRow("FM and AM radio", "Use the head unit's own tuner alongside DAB", settings.headUnitTuner) { enabled ->
+        if (!enabled && fmState.ours) fm.deactivate()
+        radio.setHeadUnitTuner(enabled)
+    }
+    if (!settings.headUnitTuner) return
+    val (local, toggleLocal) = rememberTunerToggle(fmState.local) { fm.toggleLocal() }
+    ToggleRow("Local stations only", "Seek skips weaker stations; off is DX", local) { toggleLocal() }
+    val (mono, toggleMono) = rememberTunerToggle(fmState.mono) { fm.toggleMono() }
+    ToggleRow("FM in mono", "Can reduce hiss on weak stations", mono) { toggleMono() }
+    fmState.rdsEnabled?.let { reported ->
+        val (rds, toggleRds) = rememberTunerToggle(reported) { fm.setRdsEnabled(!reported) }
+        ToggleRow("RDS", "Station names and traffic information on FM", rds) { toggleRds() }
+    }
+    fmState.regionLabel?.let { LinkRow("FM/AM region", it, onClick = null) }
 }
 
 @Composable

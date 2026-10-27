@@ -9,6 +9,7 @@ import com.iamburny.waveband.backend.BandIII
 import com.iamburny.waveband.backend.DabBackend
 import com.iamburny.waveband.backend.DabBand
 import com.iamburny.waveband.backend.DabServiceInfo
+import com.iamburny.waveband.backend.PlayingItem
 import com.iamburny.waveband.backend.ScanProgress
 import com.iamburny.waveband.backend.ServiceMetadata
 import com.iamburny.waveband.backend.SignalInfo
@@ -43,6 +44,8 @@ class OmriDabBackend(private val verboseNativeLogging: Boolean = false) : DabBac
     @Volatile private var pipeline: AudioPipeline? = null
     @Volatile private var lastLabel: String? = null
     @Volatile private var lastSlide: ByteArray? = null
+    @Volatile private var lastItem: PlayingItem? = null
+    private val frameLoss = FrameLossMeter()
     private val found = LinkedHashMap<String, DabServiceInfo>()
     // FIG 0/18 support by (ensemble ID, service ID); it can arrive before or after the service itself.
     private val announcementSupport = HashMap<Pair<Int, Long>, Pair<Int, List<Int>>>()
@@ -137,6 +140,8 @@ class OmriDabBackend(private val verboseNativeLogging: Boolean = false) : DabBac
         pipeline?.flush()
         lastLabel = null
         lastSlide = null
+        lastItem = null
+        frameLoss.reset()
         playing = service
         OmriNative.nativeStartService(h, service.frequencyKHz, service.ensembleId, 0, service.serviceId)
         cancelStartTimeout()
@@ -153,6 +158,7 @@ class OmriDabBackend(private val verboseNativeLogging: Boolean = false) : DabBac
         playing = null
         started = false
         pipeline?.flush()
+        frameLoss.reset()
         val h = handle
         if (h != 0L) OmriNative.nativeStopService(h)
         listener?.onTunerStateChanged(TunerState.READY)
@@ -263,12 +269,22 @@ class OmriDabBackend(private val verboseNativeLogging: Boolean = false) : DabBac
 
         override fun onServiceStopped(serviceId: Long) = Unit
 
-        override fun onReception(locked: Boolean, antennaLevel: Int) {
-            listener?.onSignal(SignalInfo(locked, (antennaLevel.coerceIn(0, 6) * 100) / 6, null))
+        override fun onReception(locked: Boolean, antennaLevel: Int, errorRateE4: Int) {
+            val decoding = playing != null && started
+            listener?.onSignal(
+                SignalInfo(
+                    locked = locked,
+                    signalLevel = (antennaLevel.coerceIn(0, 6) * 100) / 6,
+                    snrDb = null,
+                    errorRate = errorRateE4.takeIf { locked && it >= 0 }?.let { it / 10_000f },
+                    audioFrameLoss = if (locked && decoding) frameLoss.lossAt(System.nanoTime()) else null,
+                )
+            )
         }
 
         override fun onAudio(frame: ByteArray, codec: Int, channels: Int, sampleRate: Int, sbr: Boolean, ps: Boolean) {
             if (playing == null || !started) return
+            frameLoss.onFrame(FrameLossMeter.framesPerSecond(codec, sampleRate, sbr), System.nanoTime())
             pipeline?.submit(frame, codec, channels, sampleRate, sbr, ps)
         }
 
@@ -277,14 +293,23 @@ class OmriDabBackend(private val verboseNativeLogging: Boolean = false) : DabBac
             if (!started) return
             val text = utf8.decodeToString().trim()
             lastLabel = text
-            listener?.onMetadata(ServiceMetadata(current.key, text, lastSlide))
+            listener?.onMetadata(ServiceMetadata(current.key, text, lastSlide, lastItem))
+        }
+
+        override fun onDynamicLabelPlus(types: IntArray, texts: Array<ByteArray>, itemRunning: Boolean, itemToggle: Boolean) {
+            val current = playing ?: return
+            if (!started) return
+            val item = PlayingItem.fromTags(types.toList(), texts.map { it.decodeToString() }, itemRunning, itemToggle)
+            if (item == lastItem) return
+            lastItem = item
+            listener?.onMetadata(ServiceMetadata(current.key, lastLabel, lastSlide, item))
         }
 
         override fun onSlideshow(image: ByteArray, contentSubType: Int) {
             val current = playing ?: return
             if (!started) return
             lastSlide = image
-            listener?.onMetadata(ServiceMetadata(current.key, lastLabel, image))
+            listener?.onMetadata(ServiceMetadata(current.key, lastLabel, image, lastItem))
         }
     }
 

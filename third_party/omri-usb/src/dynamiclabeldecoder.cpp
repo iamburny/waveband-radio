@@ -26,6 +26,35 @@
 #include "global_definitions.h"
 #include "datatypes.h"
 
+namespace {
+
+/* Byte offset of character [index] of a label in the given DAB charset; past the end if it is beyond it. */
+size_t labelByteOffset(const std::vector<uint8_t>& label, uint8_t charset, size_t index) {
+    switch(charset) {
+        case 0x06:
+            // UCS-2: two bytes per character.
+            return index * 2;
+        case 0x0F: {
+            // UTF-8: skip continuation bytes.
+            size_t pos = 0;
+            for(size_t chars = 0; chars < index; chars++) {
+                if(pos >= label.size()) {
+                    return label.size() + 1;
+                }
+                pos++;
+                while(pos < label.size() && (label[pos] & 0xC0) == 0x80) {
+                    pos++;
+                }
+            }
+            return pos;
+        }
+        default:
+            return index;
+    }
+}
+
+}
+
 DynamiclabelDecoder::DynamiclabelDecoder() {
 
 }
@@ -194,7 +223,9 @@ void DynamiclabelDecoder::applicationDataInput(const std::vector<uint8_t>& appDa
                                 //Field 3: this 4-bit field, expressed as an unsigned binary number, shall specify the number of bytes in the DL Command field minus 1.
                                 uint8_t numTags = static_cast<uint8_t>((*dlIter++ & 0x03) + 1);
                                 //std::cout << m_logTag << " DLPLUS NumTags: " << +numTags << std::endl;
-                                for(uint8_t i = 0; i < numTags; i++) {
+                                // Each tag takes three bytes, and the two CRC bytes end the data group.
+                                const auto tagsEnd = m_dlsData.end() - 2;
+                                for(uint8_t i = 0; i < numTags && tagsEnd - dlIter >= 3; i++) {
                                     DabDynamicLabelPlusTag dlItem;
 
                                     //bool rfa = (*dlIter & 0x80) >> 7;
@@ -205,7 +236,12 @@ void DynamiclabelDecoder::applicationDataInput(const std::vector<uint8_t>& appDa
                                     uint8_t lengthMarker = static_cast<uint8_t>(*dlIter++ & 0x7F);
 
                                     if(dlItem.contentType != DynamiclabelDecoder::DL_PLUS_CONTENT_TYPE::DUMMY) {
-                                        dlItem.dlPlusTagText = std::string(m_dlsFullData.begin()+startMarker, m_dlsFullData.begin()+startMarker+lengthMarker+1);
+                                        // The markers count characters; a tag that runs past the label is left empty.
+                                        size_t begin = labelByteOffset(m_dlsFullData, m_currentDlsCharset, startMarker);
+                                        size_t end = labelByteOffset(m_dlsFullData, m_currentDlsCharset, startMarker + lengthMarker + 1);
+                                        if(begin < end && end <= m_dlsFullData.size()) {
+                                            dlItem.dlPlusTagText = std::string(m_dlsFullData.begin() + begin, m_dlsFullData.begin() + end);
+                                        }
 
                                         //std::cout << m_logTag << " DLPLUS ContentType: " << +dlItem.contentType << " Start: " << +startMarker << " Length: " << +lengthMarker << std::endl;
                                         //std::cout << m_logTag << " DLPLUS: " << DynamiclabelDecoder::DL_PLUS_CONTENT_TYPE_STRING[dlItem.contentType] << " : " << dlItem.dlPlusTagText << std::endl;

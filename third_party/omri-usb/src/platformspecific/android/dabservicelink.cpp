@@ -164,12 +164,27 @@ void DabServiceLink::Sink::dynamicLabelInput(const std::shared_ptr<void>& label)
     }
 
     std::string text = dabTextToUtf8(dls->dynamicLabel, dls->charset);
+    std::vector<std::pair<int, std::string>> tags;
+    for(const auto& tag : dls->dlPlusTags) {
+        if(!tag.dlPlusTagText.empty()) {
+            tags.emplace_back(static_cast<int>(tag.contentType), dabTextToUtf8(tag.dlPlusTagText, dls->charset));
+        }
+    }
+    const bool plus = !dls->dlPlusTags.empty();
     {
         std::lock_guard<std::mutex> lock(padMutex);
         lastLabel = text;
+        if(plus) {
+            lastTags = tags;
+            lastItemRunning = dls->itemRunning;
+            lastItemToggle = dls->itemToggle;
+        }
     }
     if(decoding && listener != nullptr) {
         listener->dynamicLabel(text);
+        if(plus) {
+            listener->dynamicLabelPlus(tags, dls->itemRunning, dls->itemToggle);
+        }
     }
 }
 
@@ -192,11 +207,17 @@ void DabServiceLink::Sink::slideshowInput(const std::shared_ptr<void>& slideShow
 
 void DabServiceLink::Sink::replayPad() {
     std::string label;
+    std::vector<std::pair<int, std::string>> tags;
+    bool itemRunning;
+    bool itemToggle;
     std::vector<uint8_t> slide;
     uint16_t subType;
     {
         std::lock_guard<std::mutex> lock(padMutex);
         label = lastLabel;
+        tags = lastTags;
+        itemRunning = lastItemRunning;
+        itemToggle = lastItemToggle;
         slide = lastSlide;
         subType = lastSlideSubType;
     }
@@ -205,6 +226,9 @@ void DabServiceLink::Sink::replayPad() {
     }
     if(!label.empty()) {
         listener->dynamicLabel(label);
+    }
+    if(!tags.empty()) {
+        listener->dynamicLabelPlus(tags, itemRunning, itemToggle);
     }
     if(!slide.empty()) {
         listener->slideshow(slide, subType);

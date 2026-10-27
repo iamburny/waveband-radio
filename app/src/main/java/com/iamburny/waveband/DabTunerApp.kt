@@ -3,6 +3,7 @@ package com.iamburny.waveband
 import android.app.Application
 import android.content.Context
 import com.iamburny.waveband.data.SettingsRepository
+import com.iamburny.waveband.data.SongHistory
 import com.iamburny.waveband.data.StationDatabase
 import com.iamburny.waveband.data.StationRepository
 import com.iamburny.waveband.data.TunerOrigin
@@ -11,6 +12,7 @@ import com.iamburny.waveband.fm.FakeHeadUnitRadio
 import com.iamburny.waveband.fm.FmStationNames
 import com.iamburny.waveband.fm.HeadUnitRadio
 import com.iamburny.waveband.logos.StationLogos
+import com.iamburny.waveband.playback.SpectrumTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -47,6 +49,12 @@ class DabTunerApp : Application() {
         val radio = if (BuildConfig.DEBUG && !EventCenterRadio.isInstalled(this)) FakeHeadUnitRadio(this) else EventCenterRadio(this)
         radio.also { it.connect() }
     }
+
+    /** DAB audio as it plays, for the spectrum analyser. */
+    val spectrumTap = SpectrumTap()
+
+    /** Songs heard on DAB stations that tag them. */
+    val songHistory: SongHistory by lazy { SongHistory(database.songPlays(), radio.state, appScope) }
 
     /** RDS names heard on FM/AM frequencies, saved while the head unit's tuner plays. */
     val fmStationNames: FmStationNames by lazy { FmStationNames(database.fmNames(), headUnitRadio, appScope) }

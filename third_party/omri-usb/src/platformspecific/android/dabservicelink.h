@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../../dabservice.h"
@@ -35,6 +36,11 @@ public:
     /* One encoded audio frame: an MPEG-1/2 Layer II frame (ascty 0) or a DAB+ AAC access unit (ascty 63). */
     virtual void audioData(const std::vector<uint8_t>& data, int ascty, int channels, int sampleRate, bool sbrUsed, bool psUsed) = 0;
     virtual void dynamicLabel(const std::string& utf8Text) = 0;
+    /*
+     * DL Plus tags of the current label: content types (ETSI TS 102 980 table 2) with their UTF-8
+     * text, and whether the item is running and its toggle bit.
+     */
+    virtual void dynamicLabelPlus(const std::vector<std::pair<int, std::string>>& utf8Tags, bool itemRunning, bool itemToggle) = 0;
     virtual void slideshow(const std::vector<uint8_t>& image, uint16_t contentSubType) = 0;
 };
 
@@ -72,6 +78,9 @@ private:
         std::atomic<bool> decoding{false};
         std::mutex padMutex;
         std::string lastLabel;
+        std::vector<std::pair<int, std::string>> lastTags;
+        bool lastItemRunning{false};
+        bool lastItemToggle{false};
         std::vector<uint8_t> lastSlide;
         uint16_t lastSlideSubType{0};
 

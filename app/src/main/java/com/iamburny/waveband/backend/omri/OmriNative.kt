@@ -40,12 +40,18 @@ object OmriNative {
         fun onServiceStarted(serviceId: Long)
         fun onServiceStopped(serviceId: Long)
 
-        /** [antennaLevel] is 0 (worst) to 6 (best). */
-        fun onReception(locked: Boolean, antennaLevel: Int)
+        /**
+         * [antennaLevel] is 0 (worst) to 6 (best); [errorRateE4] is the channel error rate in units
+         * of 1/10000 (2000 means no usable signal), or -1 when unknown.
+         */
+        fun onReception(locked: Boolean, antennaLevel: Int, errorRateE4: Int)
 
         /** One encoded frame: an MPEG Layer II frame or a DAB+ AAC access unit. */
         fun onAudio(frame: ByteArray, codec: Int, channels: Int, sampleRate: Int, sbr: Boolean, ps: Boolean)
         fun onDynamicLabel(utf8: ByteArray)
+
+        /** DL Plus tags of the last label: content types with their UTF-8 text. */
+        fun onDynamicLabelPlus(types: IntArray, texts: Array<ByteArray>, itemRunning: Boolean, itemToggle: Boolean)
         fun onSlideshow(image: ByteArray, contentSubType: Int)
 
         /** Announcement support (FIG 0/18) of a service in the tuned ensemble, when first seen or changed. */

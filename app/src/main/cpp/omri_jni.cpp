@@ -29,6 +29,8 @@ struct TunerContext {
     jmethodID onSlideshow = nullptr;
     jmethodID onAnnouncementSupport = nullptr;
     jmethodID onAnnouncement = nullptr;
+    jmethodID onDynamicLabelPlus = nullptr;
+    jclass byteArrayClass = nullptr;
     omri_tuner* tuner = nullptr;
 };
 
@@ -48,12 +50,13 @@ bool lookupMethods(JNIEnv* env, jobject callbacks, TunerContext& ctx) {
             {&ctx.onServiceFound, "onServiceFound", "(JIII[B[B[BIZIIII[B)V"},
             {&ctx.onServiceStarted, "onServiceStarted", "(J)V"},
             {&ctx.onServiceStopped, "onServiceStopped", "(J)V"},
-            {&ctx.onReception, "onReception", "(ZI)V"},
+            {&ctx.onReception, "onReception", "(ZII)V"},
             {&ctx.onAudio, "onAudio", "([BIIIZZ)V"},
             {&ctx.onDynamicLabel, "onDynamicLabel", "([B)V"},
             {&ctx.onSlideshow, "onSlideshow", "([BI)V"},
             {&ctx.onAnnouncementSupport, "onAnnouncementSupport", "(IJI[B)V"},
             {&ctx.onAnnouncement, "onAnnouncement", "(IIIZ)V"},
+            {&ctx.onDynamicLabelPlus, "onDynamicLabelPlus", "([I[[BZZ)V"},
     };
     jclass cls = env->GetObjectClass(callbacks);
     bool ok = true;
@@ -136,10 +139,10 @@ void cbServiceStopped(void* user, uint32_t serviceId) {
     }
 }
 
-void cbReception(void* user, int locked, int level) {
+void cbReception(void* user, int locked, int level, int errorRateE4) {
     auto* ctx = static_cast<TunerContext*>(user);
     if(JNIEnv* env = envForCurrentThread()) {
-        env->CallVoidMethod(ctx->callbacks, ctx->onReception, static_cast<jboolean>(locked != 0), level);
+        env->CallVoidMethod(ctx->callbacks, ctx->onReception, static_cast<jboolean>(locked != 0), level, errorRateE4);
         clearException(env, "onReception");
     }
 }
@@ -173,6 +176,36 @@ void cbDynamicLabel(void* user, const char* utf8) {
     env->CallVoidMethod(ctx->callbacks, ctx->onDynamicLabel, text);
     clearException(env, "onDynamicLabel");
     env->DeleteLocalRef(text);
+}
+
+void cbDynamicLabelPlus(void* user, const omri_dl_plus_tag* tags, size_t count, int itemRunning, int itemToggle) {
+    auto* ctx = static_cast<TunerContext*>(user);
+    JNIEnv* env = envForCurrentThread();
+    if(env == nullptr) {
+        return;
+    }
+    const auto n = static_cast<jsize>(count);
+    jintArray types = env->NewIntArray(n);
+    jobjectArray texts = types != nullptr ? env->NewObjectArray(n, ctx->byteArrayClass, nullptr) : nullptr;
+    bool ok = types != nullptr && texts != nullptr;
+    for(jsize i = 0; ok && i < n; i++) {
+        const jint type = tags[i].content_type;
+        env->SetIntArrayRegion(types, i, 1, &type);
+        jbyteArray text = utf8Bytes(env, tags[i].utf8);
+        if(text == nullptr) {
+            ok = false;
+            break;
+        }
+        env->SetObjectArrayElement(texts, i, text);
+        env->DeleteLocalRef(text);
+    }
+    if(ok) {
+        env->CallVoidMethod(ctx->callbacks, ctx->onDynamicLabelPlus, types, texts,
+                            static_cast<jboolean>(itemRunning != 0), static_cast<jboolean>(itemToggle != 0));
+    }
+    clearException(env, "onDynamicLabelPlus");
+    if(types != nullptr) env->DeleteLocalRef(types);
+    if(texts != nullptr) env->DeleteLocalRef(texts);
 }
 
 void cbSlideshow(void* user, const uint8_t* data, size_t length, int subType) {
@@ -232,6 +265,14 @@ Java_com_iamburny_waveband_backend_omri_OmriNative_nativeOpen(JNIEnv* env, jclas
         delete ctx;
         return 0;
     }
+    // Native worker threads can't look up classes, so the byte[] class is resolved here.
+    jclass byteArrayClass = env->FindClass("[B");
+    if(clearException(env, "byte[] class") || byteArrayClass == nullptr) {
+        delete ctx;
+        return 0;
+    }
+    ctx->byteArrayClass = static_cast<jclass>(env->NewGlobalRef(byteArrayClass));
+    env->DeleteLocalRef(byteArrayClass);
     ctx->callbacks = env->NewGlobalRef(callbacks);
 
     omri_callbacks cb{};
@@ -247,6 +288,7 @@ Java_com_iamburny_waveband_backend_omri_OmriNative_nativeOpen(JNIEnv* env, jclas
     cb.slideshow = cbSlideshow;
     cb.announcement_support = cbAnnouncementSupport;
     cb.announcement = cbAnnouncement;
+    cb.dl_plus = cbDynamicLabelPlus;
 
     const char* name = env->GetStringUTFChars(deviceName, nullptr);
     if(name == nullptr) {
@@ -271,6 +313,7 @@ Java_com_iamburny_waveband_backend_omri_OmriNative_nativeOpen(JNIEnv* env, jclas
 
     if(ctx->tuner == nullptr) {
         env->DeleteGlobalRef(ctx->callbacks);
+        env->DeleteGlobalRef(ctx->byteArrayClass);
         delete ctx;
         return 0;
     }
@@ -286,6 +329,7 @@ Java_com_iamburny_waveband_backend_omri_OmriNative_nativeClose(JNIEnv* env, jcla
     // Returns only after every library thread has stopped, so no callback can use ctx afterwards.
     omri_tuner_close(ctx->tuner);
     env->DeleteGlobalRef(ctx->callbacks);
+    env->DeleteGlobalRef(ctx->byteArrayClass);
     delete ctx;
 }
 

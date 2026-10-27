@@ -79,6 +79,19 @@ typedef struct {
     size_t cluster_count;
 } omri_service_info;
 
+/* Content types of DL Plus tags (ETSI TS 102 980 table 2) used by applications. */
+enum {
+    OMRI_DL_PLUS_ITEM_TITLE = 1,
+    OMRI_DL_PLUS_ITEM_ALBUM = 2,
+    OMRI_DL_PLUS_ITEM_ARTIST = 4
+};
+
+typedef struct {
+    int content_type;
+    /* UTF-8, NUL terminated, valid for the duration of the callback. */
+    const char* utf8;
+} omri_dl_plus_tag;
+
 /*
  * Notifications. Every callback runs on one of the library's worker threads, never on the
  * thread that called into the library, and must not call omri_tuner_close().
@@ -90,8 +103,11 @@ typedef struct {
     void (*service_found)(void* user, const omri_service_info* info);
     void (*service_started)(void* user, uint32_t service_id);
     void (*service_stopped)(void* user, uint32_t service_id);
-    /* antenna_level is 0 (worst) .. 6 (best). */
-    void (*reception)(void* user, int locked, int antenna_level);
+    /*
+     * antenna_level is 0 (worst) .. 6 (best). error_rate_e4 is the channel error rate in units of
+     * 1/10000, capped at 2000 (no usable signal), or -1 when unknown.
+     */
+    void (*reception)(void* user, int locked, int antenna_level, int error_rate_e4);
     /*
      * One encoded frame: an MPEG Layer II frame or a DAB+ AAC access unit (960 samples per channel
      * at the AAC core rate). sample_rate is the output rate (48000 or 32000 for DAB+); with sbr set
@@ -108,6 +124,12 @@ typedef struct {
      * ends; ends may be reported more than once.
      */
     void (*announcement)(void* user, uint8_t cluster_id, uint16_t flags, uint8_t subchannel_id, int active);
+    /*
+     * DL Plus tags of the dynamic label (ETSI TS 102 980), after the label they belong to:
+     * item_running is set while the tagged item (such as a song) is on air, and item_toggle flips
+     * when a new item starts.
+     */
+    void (*dl_plus)(void* user, const omri_dl_plus_tag* tags, size_t count, int item_running, int item_toggle);
 } omri_callbacks;
 
 typedef struct omri_tuner omri_tuner;

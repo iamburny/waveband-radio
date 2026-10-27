@@ -57,11 +57,13 @@ class DabPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         radio = DabTunerApp.radio(this)
-        sink = AudioTrackSink()
+        sink = AudioTrackSink(DabTunerApp.from(this).spectrumTap)
         radio.pcmSink = sink
         fm = DabTunerApp.from(this).headUnitRadio
-        // Learns station names while FM plays, also when started from the steering wheel without the app open.
+        // Learns station names while FM plays, and logs songs while DAB plays, also when started
+        // from the steering wheel without the app open.
         DabTunerApp.from(this).fmStationNames
+        DabTunerApp.from(this).songHistory
         player = DabPlayer(this, Looper.getMainLooper(), radio, sink, fm)
 
         val openUi = PendingIntent.getActivity(

@@ -16,12 +16,16 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import kotlin.math.PI
+import kotlin.math.exp
+import kotlin.math.sin
 import kotlin.random.Random
 
 /**
  * Demo tuner with no DAB decoding. A scan "finds" three fictional ensembles; playing a service
- * produces silence plus realistic metadata: a rotating dynamic label, generated slideshow images,
- * a varying signal and, on the national ensemble, a periodic traffic announcement.
+ * produces a quiet demo tone plus realistic metadata: a rotating dynamic label with song tags,
+ * generated slideshow images, a varying signal and, on the national ensemble, a periodic traffic
+ * announcement.
  *
  * All state lives on the backend's own executor thread; public methods hand work to it.
  */
@@ -43,7 +47,7 @@ class StubDabBackend : DabBackend {
     private val announcementTasks = mutableListOf<ScheduledFuture<*>>()
     private var labelIndex = 0
     private var slideIndex = 0
-    private var bars = 4
+    private var errorRate = 0.01f
     private val random = Random(7)
     private val slides = HashMap<Pair<String, Int>, ByteArray>()
 
@@ -109,12 +113,18 @@ class StubDabBackend : DabBackend {
         val format = PcmFormat(48_000, if (demo.stereo) 2 else 1)
         l.onAudioFormatChanged(format)
         l.onTunerStateChanged(TunerState.PLAYING)
-        l.onSignal(signalFor(bars))
+        l.onSignal(signalFor(errorRate))
         publishMetadata(l, demo)
 
         val frameMs = 24L
-        val silence = ByteArray((format.sampleRate * frameMs / 1000).toInt() * format.channelCount * 2)
-        playbackTasks += executor.scheduleWithFixedDelay({ ifPlaying(l, demo) { onPcm(silence, silence.size) } }, 0, frameMs, TimeUnit.MILLISECONDS)
+        val tone = DemoTone(format)
+        val frame = ByteArray((format.sampleRate * frameMs / 1000).toInt() * format.channelCount * 2)
+        playbackTasks += executor.scheduleWithFixedDelay({
+            ifPlaying(l, demo) {
+                tone.fill(frame)
+                onPcm(frame, frame.size)
+            }
+        }, 0, frameMs, TimeUnit.MILLISECONDS)
         playbackTasks += executor.scheduleWithFixedDelay({
             ifPlaying(l, demo) {
                 labelIndex++
@@ -131,8 +141,8 @@ class StubDabBackend : DabBackend {
         }
         playbackTasks += executor.scheduleWithFixedDelay({
             ifPlaying(l, demo) {
-                bars = (bars + random.nextInt(-1, 2)).coerceIn(1, 4)
-                onSignal(signalFor(bars))
+                errorRate = (errorRate + random.nextFloat() * 0.012f - 0.006f).coerceIn(0f, 0.09f)
+                onSignal(signalFor(errorRate))
             }
         }, SIGNAL_PERIOD_S, SIGNAL_PERIOD_S, TimeUnit.SECONDS)
         if (demo.info.ensembleId == NATIONAL && announcementEnsemble == null) startAnnouncements(l)
@@ -178,7 +188,11 @@ class StubDabBackend : DabBackend {
     private fun publishMetadata(l: DabBackend.Listener, demo: DemoService) {
         val label = demo.labels[labelIndex % demo.labels.size]
         val slide = if (demo.slideshow) slides.getOrPut(demo.info.key to slideIndex) { renderSlide(demo.info, slideIndex) } else null
-        l.onMetadata(ServiceMetadata(demo.info.key, label, slide))
+        // Song labels are tagged the way DL Plus stations tag theirs.
+        val item = label.removePrefix(SONG_PREFIX).takeIf { label.startsWith(SONG_PREFIX) }?.split(" – ", limit = 2)
+            ?.takeIf { it.size == 2 }
+            ?.let { (artist, title) -> PlayingItem(title, artist, running = true, toggle = labelIndex % 2 == 0) }
+        l.onMetadata(ServiceMetadata(demo.info.key, label, slide, item))
     }
 
     /** A traffic bulletin on Travel Desk every few minutes while a national-ensemble service plays. */
@@ -201,7 +215,54 @@ class StubDabBackend : DabBackend {
         announcementEnsemble = null
     }
 
-    private fun signalFor(bars: Int) = SignalInfo(locked = true, signalLevel = bars * 25 - 5, snrDb = null)
+    /** Reception as the Raontech tuner reports it: its antenna level follows the error rate. */
+    private fun signalFor(errorRate: Float): SignalInfo {
+        val level = LEVEL_THRESHOLDS.indexOfFirst { errorRate >= it }.let { if (it < 0) 6 else it }
+        return SignalInfo(
+            locked = true,
+            signalLevel = level * 100 / 6,
+            snrDb = null,
+            errorRate = errorRate,
+            audioFrameLoss = ((errorRate - 0.05f) * 10f).coerceIn(0f, 1f),
+        )
+    }
+
+    /** A chord at roughly broadcast loudness, with a soft pulse and a ticking hi-hat, so the visualisers have something to show. */
+    private class DemoTone(private val format: PcmFormat) {
+        private var sample = 0L
+
+        fun fill(buffer: ByteArray) {
+            val rate = format.sampleRate.toDouble()
+            val frames = buffer.size / (2 * format.channelCount)
+            for (i in 0 until frames) {
+                val t = sample++ / rate
+                val chord = CHORDS[((t / 2.0).toInt()) % CHORDS.size]
+                var v = chord.sumOf { f -> sin(2 * PI * f * t) } / chord.size * 0.5
+                val beat = t % 0.5
+                v += sin(2 * PI * 60.0 * t) * exp(-beat * 12.0)
+                // The tick alternates between the channels, so the left and right meters differ.
+                val tick = sin(2 * PI * 7000.0 * t) * exp(-((t + 0.25) % 0.5) * 40.0) * 0.6
+                val tickChannel = ((t + 0.25) / 0.5).toInt() % 2
+                for (c in 0 until format.channelCount) {
+                    val mixed = if (c == tickChannel || format.channelCount == 1) v + tick else v
+                    val s = (mixed * AMPLITUDE * Short.MAX_VALUE).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    val at = (i * format.channelCount + c) * 2
+                    buffer[at] = s.toByte()
+                    buffer[at + 1] = (s shr 8).toByte()
+                }
+            }
+        }
+
+        private companion object {
+            const val AMPLITUDE = 0.3
+            val CHORDS = listOf(
+                doubleArrayOf(220.0, 277.18, 329.63, 880.0),
+                doubleArrayOf(196.0, 246.94, 293.66, 783.99),
+                doubleArrayOf(174.61, 220.0, 261.63, 698.46),
+                doubleArrayOf(196.0, 246.94, 293.66, 1174.66),
+            )
+        }
+    }
 
     /** A simple generated slide: gradient in the station colour, its initials and name. */
     private fun renderSlide(service: DabServiceInfo, index: Int): ByteArray {
@@ -253,7 +314,11 @@ class StubDabBackend : DabBackend {
         const val LABEL_PERIOD_S = 10L
         const val SLIDE_PERIOD_S = 25L
         const val SLIDE_COUNT = 2
-        const val SIGNAL_PERIOD_S = 4L
+        const val SIGNAL_PERIOD_S = 1L
+        const val SONG_PREFIX = "Now: "
+
+        /** Error rates at which the antenna level drops to 0, 1, … 5, as on the Raontech tuner. */
+        val LEVEL_THRESHOLDS = floatArrayOf(0.081f, 0.07f, 0.049f, 0.04f, 0.025f, 0.018f)
         const val ANNOUNCEMENT_FIRST_S = 60L
         const val ANNOUNCEMENT_PERIOD_S = 180L
         const val ANNOUNCEMENT_LENGTH_S = 15L
@@ -300,7 +365,7 @@ class StubDabBackend : DabBackend {
             )
         }
 
-        private fun songs(vararg tracks: String) = tracks.map { "Now: $it" }
+        private fun songs(vararg tracks: String) = tracks.map { "$SONG_PREFIX$it" }
 
         val SERVICES: List<DemoService> = listOf(
             service(0xCD01, NATIONAL, "Northern Gold", 27, 80, 1, slideshow = true,

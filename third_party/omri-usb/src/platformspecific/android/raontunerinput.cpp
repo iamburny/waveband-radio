@@ -1650,7 +1650,7 @@ void RaonTunerInput::getAntennaLevel() {
         rcnt0 = readRegister(0x8F);
     } else {
         cer_period_cnt = 0;
-        m_usbDevice.get()->receptionStatistics(false, 0);
+        m_usbDevice.get()->receptionStatistics(false, 0, -1);
         return;
     }
 
@@ -1697,7 +1697,7 @@ void RaonTunerInput::getAntennaLevel() {
         m_prevAntennaLvl = static_cast<uint8_t>(prevLevel);
     }
 
-    m_usbDevice.get()->receptionStatistics(true, prevLevel);
+    m_usbDevice.get()->receptionStatistics(true, prevLevel, static_cast<int>(ret_val));
 }
 
 //TUNER METHODS END

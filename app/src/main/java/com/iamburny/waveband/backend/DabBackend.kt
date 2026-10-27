@@ -130,10 +130,47 @@ data class ServiceMetadata(
     val serviceKey: String,
     val dynamicLabel: String? = null,
     val slideshowJpegOrPng: ByteArray? = null,
+    /** What the station says is on air, from DL Plus tags; null when it doesn't tag its labels. */
+    val item: PlayingItem? = null,
 )
 
-/** [snrDb] and [signalLevel] are backend-specific scales; [signalLevel] is 0..100 when known. */
-data class SignalInfo(val locked: Boolean, val signalLevel: Int?, val snrDb: Float?) {
+/**
+ * A programme item, such as a song, tagged by DL Plus (ETSI TS 102 980). [running] is false between
+ * items; [toggle] flips when a new item starts.
+ */
+data class PlayingItem(val title: String?, val artist: String?, val running: Boolean, val toggle: Boolean) {
+    companion object {
+        const val TYPE_TITLE = 1
+        const val TYPE_ARTIST = 4
+
+        /** The item described by DL Plus tags of the given content [types] and [texts]. */
+        fun fromTags(types: List<Int>, texts: List<String>, running: Boolean, toggle: Boolean): PlayingItem {
+            fun tag(type: Int) = types.indices.firstOrNull { types[it] == type }?.let { texts.getOrNull(it)?.trim() }?.ifBlank { null }
+            return PlayingItem(tag(TYPE_TITLE), tag(TYPE_ARTIST), running, toggle)
+        }
+    }
+}
+
+/**
+ * [snrDb] and [signalLevel] are backend-specific scales; [signalLevel] is 0..100 when known.
+ * [errorRate] is the tuner's channel error rate (0 clean, [UNUSABLE_ERROR_RATE] or more unusable) and
+ * [audioFrameLoss] the share of audio frames that didn't arrive, each null when unknown.
+ */
+data class SignalInfo(
+    val locked: Boolean,
+    val signalLevel: Int?,
+    val snrDb: Float?,
+    val errorRate: Float? = null,
+    val audioFrameLoss: Float? = null,
+) {
+    /** Reception quality from 0 (unusable) to 100 (error free), from the error rate when known. */
+    val quality: Int?
+        get() = when {
+            !locked -> 0
+            errorRate != null -> ((1f - errorRate / UNUSABLE_ERROR_RATE) * 100).toInt().coerceIn(0, 100)
+            else -> signalLevel
+        }
+
     /** Signal strength as 0..4 bars: 0 without lock, at least 1 with it. */
     val bars: Int
         get() = when {
@@ -144,6 +181,11 @@ data class SignalInfo(val locked: Boolean, val signalLevel: Int?, val snrDb: Flo
             signalLevel >= 25 -> 2
             else -> 1
         }
+
+    companion object {
+        /** Error rate at which the Raontech tuner reports its lowest antenna level. */
+        const val UNUSABLE_ERROR_RATE = 0.081f
+    }
 }
 
 data class BackendError(val message: String, val cause: Throwable? = null)

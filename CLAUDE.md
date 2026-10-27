@@ -61,7 +61,7 @@ SDK command-line tools are at `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\b
 **Single tuner.** The stick has one tuner, so a full scan interrupts playback, and only announcements on the current ensemble can be followed.
 
 **Persistence.**
-- Room (`data/StationDatabase.kt`) stores stations and the 12 presets. DataStore (`data/SettingsRepository.kt`) stores settings and the last station.
+- Room (`data/StationDatabase.kt`) stores stations, the 12 presets, FM names and the song history. DataStore (`data/SettingsRepository.kt`) stores settings and the last station.
 - Everything is scoped by `TunerOrigin` (`USB` or `DEMO`), so demo stations never mix with real ones. The station primary key is `(origin, key)`, where `key` is `DabServiceInfo.key` (service ID @ frequency).
 - The Room schema is exported to `app/schemas/`. Bump the version and add a migration when you change entities.
 
@@ -73,6 +73,11 @@ SDK command-line tools are at `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\b
 - Station tiles (`StationTile` in `ui/Components.kt`) show the broadcaster's logo from `logos/StationLogos` (provided through `LocalStationLogos`) and fall back to generated monograms (`Monogram.kt`). Now Playing prefers the slideshow image over the logo.
 
 **Station logos.** The app's only network access. `DabTunerApp` drives `StationLogos.refresh` from the USB origin's stations, the setting and connectivity; `RadioDnsClient` resolves the RadioDNS CNAME and `_radiospi._tcp` SRV (raw DNS via `DnsResolver` on API 29+, UDP to the network's DNS server below), and `ServiceInformation` parses `SI.xml`. Logos are keyed by `RadioDns.logoKey` (country code + SId, no ensemble). Cleartext HTTP is allowed (`res/xml/network_security_config.xml`) because many broadcasters' SPI servers are HTTP-only. Keep the privacy policy on bluegreenstudios.co.uk in step with any network use.
+
+**DAB extras.** These are DAB-only, because FM/AM audio and metadata never pass through Android.
+- **Visualisers:** `AudioTrackSink` copies PCM (left and right) into `playback/SpectrumTap` while a view in `ui/Visualisers.kt` is attached. Views read the frames leaving the speaker now, compensating for the AudioTrack buffer. `playback/SpectrumAnalyser` turns them into bands; the pure maths for the other views (`BandSmoother`, `ScopeTrigger`, `VuMeter`) is in `playback/Visualisation.kt`. `AppSettings.visualiser` picks the view, and tapping the artwork steps through `Visualiser`.
+- **Song history:** `data/SongHistory` logs songs from DL Plus tags (`ServiceMetadata.item`) into Room's `song_plays` table. The History tab shows them.
+- **Signal panel:** `ui/SignalScreen` shows `SignalInfo.errorRate` (the Raontech channel error rate, passed through `omri_api`) and `audioFrameLoss` (`backend/omri/FrameLossMeter`), plus `RadioController.signalHistory`.
 
 **Media session.** Skip next/previous (steering-wheel buttons) steps through the saved stations in the current sort order (`StationOrder.kt`). The session metadata carries the station name, the DLS text and artwork.
 

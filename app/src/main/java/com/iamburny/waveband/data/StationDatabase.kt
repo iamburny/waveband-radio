@@ -6,6 +6,8 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
@@ -158,14 +160,53 @@ interface StationDao {
     }
 }
 
+/** A song heard on a DAB station, as the station tagged it. */
+@Entity(tableName = "song_plays", indices = [Index("playedAt"), Index("stationKey")])
+data class SongPlayEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val stationKey: String,
+    val stationLabel: String,
+    val artist: String,
+    val title: String,
+    /** Epoch milliseconds. */
+    val playedAt: Long,
+)
+
+@Dao
+interface SongPlayDao {
+
+    @Query("SELECT * FROM song_plays ORDER BY playedAt DESC, id DESC")
+    fun observe(): Flow<List<SongPlayEntity>>
+
+    @Query("SELECT * FROM song_plays WHERE stationKey = :stationKey ORDER BY playedAt DESC, id DESC LIMIT 1")
+    suspend fun latest(stationKey: String): SongPlayEntity?
+
+    @Insert
+    suspend fun insert(play: SongPlayEntity)
+
+    @Query("DELETE FROM song_plays WHERE id NOT IN (SELECT id FROM song_plays ORDER BY playedAt DESC, id DESC LIMIT :keep)")
+    suspend fun keepNewest(keep: Int)
+
+    /** Saves [play] and drops the oldest plays beyond [keep]. */
+    @Transaction
+    suspend fun record(play: SongPlayEntity, keep: Int) {
+        insert(play)
+        keepNewest(keep)
+    }
+
+    @Query("DELETE FROM song_plays")
+    suspend fun clear()
+}
+
 @Database(
-    entities = [StationEntity::class, PresetEntity::class, FmNameEntity::class],
-    version = 3,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    entities = [StationEntity::class, PresetEntity::class, FmNameEntity::class, SongPlayEntity::class],
+    version = 4,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 abstract class StationDatabase : RoomDatabase() {
     abstract fun stations(): StationDao
     abstract fun fmNames(): FmNameDao
+    abstract fun songPlays(): SongPlayDao
 
     companion object {
         fun create(context: Context): StationDatabase =

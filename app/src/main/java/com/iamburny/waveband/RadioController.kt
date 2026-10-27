@@ -5,6 +5,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import com.iamburny.waveband.backend.Announcement
 import com.iamburny.waveband.backend.AnnouncementType
 import com.iamburny.waveband.backend.BackendError
@@ -26,6 +27,7 @@ import com.iamburny.waveband.data.Source
 import com.iamburny.waveband.data.Station
 import com.iamburny.waveband.data.StationRepository
 import com.iamburny.waveband.data.TunerOrigin
+import com.iamburny.waveband.data.Visualiser
 import com.iamburny.waveband.usb.UsbTunerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +57,9 @@ interface PcmSink {
 data class AnnouncementState(val clusterId: Int, val service: DabServiceInfo)
 
 data class ScanState(val progress: ScanProgress?, val found: Int)
+
+/** A reception reading at [atMillis] ([SystemClock.elapsedRealtime]). */
+data class SignalSample(val atMillis: Long, val signal: SignalInfo)
 
 data class RadioState(
     val tunerName: String? = null,
@@ -129,6 +134,11 @@ class RadioController(
 
     /** Whether the station list, and with it next/previous station, is in A–Z order. */
     val alphabetical: StateFlow<Boolean> = _alphabetical.asStateFlow()
+
+    private val _signalHistory = MutableStateFlow<List<SignalSample>>(emptyList())
+
+    /** Reception readings of the last [SIGNAL_HISTORY_MS] since the station was tuned, oldest first. */
+    val signalHistory: StateFlow<List<SignalSample>> = _signalHistory.asStateFlow()
 
     private val _tunerOpened = MutableSharedFlow<TunerOrigin>(replay = 1)
 
@@ -251,6 +261,7 @@ class RadioController(
             conn?.close()
         }
         _state.update { RadioState(lastError = it.lastError) }
+        _signalHistory.value = emptyList()
     }
 
     fun startScan() {
@@ -280,6 +291,7 @@ class RadioController(
         // Tuning stops a running scan; its partial results must not prune the saved stations.
         if (_state.value.scan != null) scanCancelled = true
         _state.update { it.copy(current = service, metadata = null, announcement = null, audioFormat = null) }
+        _signalHistory.value = emptyList()
         openOrigin?.let { o -> scope.launch { settingsRepository.setLastStation(o, service.key) } }
         val b = backend
         runOnBackend { b.play(service) }
@@ -356,6 +368,10 @@ class RadioController(
 
     fun setSlideshow(enabled: Boolean) {
         scope.launch { settingsRepository.setSlideshow(enabled) }
+    }
+
+    fun setVisualiser(visualiser: Visualiser) {
+        scope.launch { settingsRepository.setVisualiser(visualiser) }
     }
 
     fun setStationLogos(enabled: Boolean) {
@@ -502,7 +518,11 @@ class RadioController(
         }
 
         override fun onSignal(signal: SignalInfo) {
-            if (current) _state.update { it.copy(signal = signal) }
+            if (!current) return
+            _state.update { it.copy(signal = signal) }
+            if (_state.value.tunerState != TunerState.PLAYING) return
+            val now = SystemClock.elapsedRealtime()
+            _signalHistory.update { history -> history.dropWhile { now - it.atMillis > SIGNAL_HISTORY_MS } + SignalSample(now, signal) }
         }
 
         override fun onAnnouncement(announcement: Announcement) {
@@ -512,5 +532,9 @@ class RadioController(
         override fun onError(error: BackendError) {
             if (current) setError(error.message)
         }
+    }
+
+    companion object {
+        const val SIGNAL_HISTORY_MS = 2 * 60 * 1000L
     }
 }

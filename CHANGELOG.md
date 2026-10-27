@@ -6,6 +6,22 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-27
+
+### Added
+
+- Visualisers: tap the artwork on the Playing screen to step through live views of the DAB audio
+  (spectrum bars, an oscilloscope, a pair of VU meters, a radial spectrum round the station logo
+  and a scrolling waterfall) and back to the artwork. The choice is remembered.
+- Song history: a new History tab lists the songs heard on DAB stations that send the artist and
+  title, grouped by day. Tap a song to search for it on YouTube.
+- Signal details: tap the signal bars on the Playing screen for the reception quality, error rate
+  and audio dropouts, with a graph of the last two minutes, to help place the aerial.
+
+### Fixed
+
+- A station sending malformed song tags can no longer make the DAB decoder read past its data.
+
 ## [0.1.5] - 2026-10-26
 
 ### Added
@@ -17,6 +33,7 @@ All notable changes to Waveband Radio are recorded here. The format follows
 
 - If the app was stopped while FM was playing, starting DAB no longer plays over the head unit's
   tuner, and reopening the app no longer starts DAB on top of FM.
+
 ## [0.1.4] - 2026-10-26
 
 ### Added
@@ -105,7 +122,8 @@ First test release, published to the Google Play internal testing track.
 - Only one USB tuner type is supported so far.
 - Requires Android 7.0 (API 24) or later.
 
-[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/iamburny/waveband-radio/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/iamburny/waveband-radio/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/iamburny/waveband-radio/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/iamburny/waveband-radio/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/iamburny/waveband-radio/compare/v0.1.2...v0.1.3

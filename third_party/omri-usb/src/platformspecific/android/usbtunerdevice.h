@@ -60,8 +60,11 @@ public:
     virtual void ensembleReady(const DabEnsemble& ensemble) = 0;
     virtual void serviceStarted(uint32_t serviceId) = 0;
     virtual void serviceStopped(uint32_t serviceId) = 0;
-    /* antennaLevel is 0 (worst) .. 6 (best). */
-    virtual void receptionStatistics(bool rfLock, int antennaLevel) = 0;
+    /*
+     * antennaLevel is 0 (worst) .. 6 (best). errorRateE4 is the MSC channel error rate in units of
+     * 1/10000, capped at 2000 (no usable signal); -1 when unknown.
+     */
+    virtual void receptionStatistics(bool rfLock, int antennaLevel, int errorRateE4) = 0;
     /* FIG 0/18 support of a service in the tuned ensemble; see DabEnsemble::registerAnnouncementSupportCallback. */
     virtual void announcementSupport(uint16_t ensembleId, uint32_t serviceId, uint16_t asuFlags, const std::vector<uint8_t>& clusterIds) = 0;
     /* FIG 0/19 switching in the tuned ensemble; see DabEnsemble::registerAnnouncementSwitchingCallback. */

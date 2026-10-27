@@ -51,6 +51,7 @@ enum class Screen(val label: String, val icon: ImageVector) {
     PLAYING("Playing", DabIcons.Playing),
     STATIONS("Stations", DabIcons.Stations),
     PRESETS("Presets", DabIcons.Presets),
+    HISTORY("History", DabIcons.History),
     SETTINGS("Settings", DabIcons.Settings),
 }
 
@@ -96,6 +97,7 @@ fun DabApp(radio: RadioController, settings: AppSettings, playWhenReady: Boolean
                             Screen.PLAYING -> NowPlayingScreen(radio, settings, playWhenReady, demoAvailable, actions, onOpenStations = { screen = Screen.STATIONS })
                             Screen.STATIONS -> StationsScreen(radio, actions)
                             Screen.PRESETS -> PresetsScreen(radio, actions)
+                            Screen.HISTORY -> HistoryScreen(radio)
                             Screen.SETTINGS -> SettingsScreen(radio, settings, demoAvailable, actions, onOpenLicences = { showLicences = true })
                         }
                     }
@@ -128,6 +130,7 @@ private fun NavRail(current: Screen, onSelect: (Screen) -> Unit) {
         RailItem(Screen.PLAYING, current, onSelect)
         RailItem(Screen.STATIONS, current, onSelect)
         RailItem(Screen.PRESETS, current, onSelect)
+        RailItem(Screen.HISTORY, current, onSelect)
         Spacer(Modifier.weight(1f))
         RailItem(Screen.SETTINGS, current, onSelect)
     }

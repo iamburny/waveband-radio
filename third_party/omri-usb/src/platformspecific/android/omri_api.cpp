@@ -188,9 +188,9 @@ public:
         }
     }
 
-    void receptionStatistics(bool rfLock, int antennaLevel) override {
+    void receptionStatistics(bool rfLock, int antennaLevel, int errorRateE4) override {
         if(m_cb.reception != nullptr) {
-            m_cb.reception(m_cb.user, rfLock ? 1 : 0, antennaLevel);
+            m_cb.reception(m_cb.user, rfLock ? 1 : 0, antennaLevel, errorRateE4);
         }
     }
 
@@ -216,6 +216,18 @@ public:
         if(m_cb.dynamic_label != nullptr) {
             m_cb.dynamic_label(m_cb.user, utf8Text.c_str());
         }
+    }
+
+    void dynamicLabelPlus(const std::vector<std::pair<int, std::string>>& utf8Tags, bool itemRunning, bool itemToggle) override {
+        if(m_cb.dl_plus == nullptr) {
+            return;
+        }
+        std::vector<omri_dl_plus_tag> tags;
+        tags.reserve(utf8Tags.size());
+        for(const auto& tag : utf8Tags) {
+            tags.push_back(omri_dl_plus_tag{tag.first, tag.second.c_str()});
+        }
+        m_cb.dl_plus(m_cb.user, tags.data(), tags.size(), itemRunning ? 1 : 0, itemToggle ? 1 : 0);
     }
 
     void slideshow(const std::vector<uint8_t>& image, uint16_t contentSubType) override {

@@ -76,4 +76,13 @@ object DabIcons {
     val Close = icon("Close", Layer("M6 6l12 12M18 6L6 18", stroke = 2.4f))
     val Search = icon("Search", Layer(circle(10.5f, 10.5f, 6.5f) + "M15.5 15.5L20.5 20.5", stroke = 2.4f))
     val Check = icon("Check", Layer("M5 12.5l4.5 4.5L19 7.5", stroke = 2.6f))
+    val History = icon("History", Layer(circle(12f, 12f, 8.5f), stroke = 2f), Layer("M12 7.5V12l3 2", stroke = 2f))
+    val Spectrum = icon("Spectrum", Layer("M4 20v-5M8 20V9M12 20v-8M16 20V5M20 20v-9", stroke = 2.4f))
+    val Image = icon(
+        "Image",
+        Layer(roundRect(3f, 4f, 18f, 16f, 2.5f), stroke = 2f),
+        Layer("M3.5 17l5-5 4 4 2.5-2.5 5.5 5.5", stroke = 2f),
+        Layer(circle(15.5f, 8.5f, 1.5f), fill = true),
+    )
+    val Open = icon("Open", Layer("M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5", stroke = 2f))
 }

@@ -1,6 +1,10 @@
 package com.iamburny.waveband.ui
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -15,13 +19,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,11 +60,13 @@ import com.iamburny.waveband.data.PresetKind
 import com.iamburny.waveband.data.QuickPresets
 import com.iamburny.waveband.data.Source
 import com.iamburny.waveband.data.Station
+import com.iamburny.waveband.data.Visualiser
 import com.iamburny.waveband.fm.FmBand
 import com.iamburny.waveband.ui.theme.Dab
 import com.iamburny.waveband.ui.theme.OnAccent
 import com.iamburny.waveband.ui.theme.dabText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -95,11 +109,21 @@ fun NowPlayingScreen(
         return
     }
 
+    var showSignal by rememberSaveable { mutableStateOf(false) }
+    val signalAvailable = state.tunerOpen && current != null && state.scan == null
+    // The panel closes for good when the station goes, e.g. for a scan.
+    LaunchedEffect(signalAvailable) { if (!signalAvailable) showSignal = false }
+    BackHandler(enabled = showSignal && signalAvailable) { showSignal = false }
+    if (showSignal && signalAvailable) {
+        SignalScreen(radio, state.tuned ?: current, onClose = { showSignal = false })
+        return
+    }
+
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        if (state.tunerOpen && current != null && state.scan == null) {
-            StatusRow(state, state.tuned ?: current, selectSource)
+        if (signalAvailable) {
+            StatusRow(state, state.tuned ?: current, selectSource, onOpenSignal = { showSignal = true })
             Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                Artwork(state, current, settings.slideshow)
+                Artwork(state, current, settings.slideshow, settings.visualiser, onSelect = radio::setVisualiser)
                 StationInfo(
                     state = state,
                     service = current,
@@ -121,7 +145,7 @@ fun NowPlayingScreen(
 }
 
 @Composable
-private fun StatusRow(state: RadioState, service: DabServiceInfo, selectSource: ((ListenSource) -> Unit)?) {
+private fun StatusRow(state: RadioState, service: DabServiceInfo, selectSource: ((ListenSource) -> Unit)?, onOpenSignal: () -> Unit) {
     val c = Dab.colors
     Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         val dab = if (service.isDabPlus) "DAB+" else "DAB"
@@ -142,18 +166,36 @@ private fun StatusRow(state: RadioState, service: DabServiceInfo, selectSource: 
             state.audioFormat?.let { if (it.channelCount >= 2) "Stereo" else "Mono" },
         ).joinToString(" · ")
         if (audio.isNotEmpty()) Text(audio, style = dabText(20), color = c.muted, maxLines = 1)
-        SignalBars(state.signal?.bars ?: 0)
+        Box(
+            Modifier.height(48.dp).pressable(RoundedCornerShape(12.dp), onClickLabel = "Show signal details", onClick = onOpenSignal).padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            SignalBars(state.signal?.bars ?: 0)
+        }
     }
 }
 
+/** The slideshow or logo, or a visualiser in its place; tapping steps through them, naming each briefly. */
 @Composable
-private fun Artwork(state: RadioState, service: DabServiceInfo, slideshowEnabled: Boolean) {
+private fun Artwork(state: RadioState, service: DabServiceInfo, slideshowEnabled: Boolean, visualiser: Visualiser, onSelect: (Visualiser) -> Unit) {
     val c = Dab.colors
-    val bytes = state.tunedMetadata?.slideshowJpegOrPng?.takeIf { slideshowEnabled && state.announcement == null }
+    // Taps step from what is shown, as the saved setting arrives back a moment later.
+    var shown by remember { mutableStateOf(visualiser) }
+    LaunchedEffect(visualiser) { shown = visualiser }
+    val artwork = shown == Visualiser.ARTWORK
+    val bytes = state.tunedMetadata?.slideshowJpegOrPng?.takeIf { slideshowEnabled && state.announcement == null && artwork }
     val slide by produceState<ImageBitmap?>(null, bytes) {
         value = bytes?.let { b -> withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap() } }
     }
     val logo = rememberStationLogo(service)
+    var named by remember { mutableStateOf<Visualiser?>(null) }
+    var namedAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(namedAt) {
+        if (named != null) {
+            delay(VISUALISER_NAME_MS)
+            named = null
+        }
+    }
     val shape = RoundedCornerShape(28.dp)
     Box(
         Modifier
@@ -161,14 +203,45 @@ private fun Artwork(state: RadioState, service: DabServiceInfo, slideshowEnabled
             .aspectRatio(1f)
             .clip(shape)
             .background(c.placeholder)
-            .semantics { contentDescription = if (slide != null) "Slideshow image from ${service.label}" else "${service.label} logo" },
+            .pressable(shape, onClickLabel = "Show ${shown.next.label.lowercase()}") {
+                shown = shown.next
+                onSelect(shown)
+                named = shown
+                namedAt = System.nanoTime()
+            }
+            .semantics {
+                contentDescription = when {
+                    !artwork -> shown.label
+                    slide != null -> "Slideshow image from ${service.label}"
+                    else -> "${service.label} logo"
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         val img = slide ?: logo
-        if (img != null) {
-            Image(img, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-        } else {
-            MonogramTile(service.serviceId, service.label, size = 160.dp, corner = 32.dp, fontSize = 64)
+        when {
+            !artwork -> VisualiserView(shown, DabTunerApp.from(LocalContext.current).spectrumTap, service, logo, Modifier.fillMaxSize())
+            img != null -> Image(img, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            else -> MonogramTile(service.serviceId, service.label, size = 160.dp, corner = 32.dp, fontSize = 64)
+        }
+        Icon(
+            if (shown.next == Visualiser.ARTWORK) DabIcons.Image else DabIcons.Spectrum,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(14.dp)
+                .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                .padding(10.dp)
+                .size(24.dp),
+        )
+        AnimatedVisibility(named != null, Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp), enter = fadeIn(), exit = fadeOut()) {
+            Text(
+                (named ?: shown).label,
+                style = dabText(20, FontWeight.Bold),
+                color = Color.White,
+                modifier = Modifier.background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(horizontal = 18.dp, vertical = 8.dp),
+            )
         }
     }
 }
@@ -410,3 +483,5 @@ private fun PresetStrip(
         }
     }
 }
+
+private const val VISUALISER_NAME_MS = 1_500L

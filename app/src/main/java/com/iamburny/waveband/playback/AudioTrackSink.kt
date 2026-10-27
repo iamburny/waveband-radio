@@ -6,12 +6,16 @@ import android.media.AudioTrack
 import com.iamburny.waveband.PcmSink
 import com.iamburny.waveband.backend.PcmFormat
 
-/** Streams 16-bit PCM from the backend's audio thread into an [AudioTrack]. */
-class AudioTrackSink : PcmSink {
+/** Streams 16-bit PCM from the backend's audio thread into an [AudioTrack], and copies it to [tap]. */
+class AudioTrackSink(private val tap: SpectrumTap) : PcmSink {
 
     private val lock = Any()
     private var track: AudioTrack? = null
     private var format: PcmFormat? = null
+    // Frames written to the track since it was created or flushed, to tell how much is still queued.
+    // Guarded by lock; [flushes] tells a write that straddled a flush not to count itself.
+    private var framesWritten = 0L
+    private var flushes = 0
 
     /** 0..1; lowered while another app plays over the radio and the system can't duck for us. */
     @Volatile
@@ -26,8 +30,18 @@ class AudioTrackSink : PcmSink {
         set(value) {
             field = value
             synchronized(lock) {
-                track?.let { if (value) it.play() else it.pause().also { _ -> it.flush() } }
+                track?.let {
+                    if (value) {
+                        it.play()
+                    } else {
+                        it.pause()
+                        it.flush()
+                        framesWritten = 0
+                        flushes++
+                    }
+                }
             }
+            if (!value) tap.clear()
         }
 
     override fun onFormat(format: PcmFormat) {
@@ -68,8 +82,21 @@ class AudioTrackSink : PcmSink {
      * stop/release by returning an error code.
      */
     override fun write(buffer: ByteArray, length: Int) {
-        val t = synchronized(lock) { track } ?: return
-        if (playing) t.write(buffer, 0, length)
+        val (t, flushesBefore) = synchronized(lock) { (track ?: return) to flushes }
+        if (!playing) return
+        val n = t.write(buffer, 0, length)
+        if (n <= 0) return
+        synchronized(lock) {
+            // A pause, release or format change since the write leaves nothing to count.
+            if (track !== t || flushes != flushesBefore) return
+            val channels = t.channelCount
+            framesWritten += n / (2 * channels)
+            if (tap.active) {
+                val played = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+                val queued = (framesWritten - played).coerceIn(0L, t.bufferSizeInFrames.toLong().coerceAtLeast(0L))
+                tap.write(buffer, n, channels, t.sampleRate, queued)
+            }
+        }
     }
 
     fun release() {
@@ -83,5 +110,6 @@ class AudioTrackSink : PcmSink {
         }
         track = null
         format = null
+        framesWritten = 0
     }
 }

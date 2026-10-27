@@ -16,6 +16,19 @@ enum class Accent { AMBER, TEAL, BLUE, CORAL }
 
 enum class Region(val label: String) { UK("United Kingdom · Band III") }
 
+/** What fills the artwork square on Now Playing; tapping it steps to the [next]. */
+enum class Visualiser(val label: String) {
+    ARTWORK("Artwork"),
+    BARS("Spectrum bars"),
+    SCOPE("Oscilloscope"),
+    VU("VU meters"),
+    RADIAL("Radial spectrum"),
+    WATERFALL("Waterfall"),
+    ;
+
+    val next: Visualiser get() = entries[(ordinal + 1) % entries.size]
+}
+
 /** What the radio plays: a DAB station from the USB tuner, or the head unit's own FM/AM tuner. */
 enum class Source { DAB, FM }
 
@@ -32,6 +45,7 @@ data class AppSettings(
     val source: Source = Source.DAB,
     /** Offer the head unit's own FM/AM tuner, where there is one. */
     val headUnitTuner: Boolean = true,
+    val visualiser: Visualiser = Visualiser.ARTWORK,
 )
 
 private val Context.settingsStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -52,6 +66,7 @@ class SettingsRepository(context: Context) {
             lastOrigin = p[LAST_ORIGIN].toEnum(TunerOrigin.USB),
             source = p[SOURCE].toEnum(Source.DAB),
             headUnitTuner = p[HEAD_UNIT_TUNER] ?: true,
+            visualiser = p[VISUALISER].toEnum(Visualiser.ARTWORK),
         )
     }
 
@@ -76,6 +91,8 @@ class SettingsRepository(context: Context) {
 
     suspend fun setHeadUnitTuner(enabled: Boolean) = store.edit { it[HEAD_UNIT_TUNER] = enabled }
 
+    suspend fun setVisualiser(visualiser: Visualiser) = store.edit { it[VISUALISER] = visualiser.name }
+
     private companion object {
         val DISPLAY_MODE = stringPreferencesKey("display_mode")
         val ACCENT = stringPreferencesKey("accent")
@@ -87,6 +104,7 @@ class SettingsRepository(context: Context) {
         val LAST_ORIGIN = stringPreferencesKey("last_origin")
         val SOURCE = stringPreferencesKey("source")
         val HEAD_UNIT_TUNER = booleanPreferencesKey("head_unit_tuner")
+        val VISUALISER = stringPreferencesKey("visualiser")
 
         inline fun <reified E : Enum<E>> String?.toEnum(default: E): E =
             this?.let { name -> enumValues<E>().firstOrNull { it.name == name } } ?: default

@@ -30,9 +30,10 @@ To see the exact changes, diff `src/` against `omriusb/src/main/cpp` at the comm
   callbacks hold shared state instead of `this`, so a callback that is already running cannot
   outlive the object. Labels are converted to UTF-8 for EBU Latin, ISO 8859-1, UCS-2 and UTF-8.
 - `platformspecific/android/omri_api.{h,cpp}`: C API (open/close, scan, start/stop service,
-  callbacks for state, services, reception, audio frames, dynamic label, slideshow and
-  announcements). Found services carry the subchannel bitrate and ID of the primary audio
-  component and their announcement support (flags and clusters).
+  callbacks for state, services, reception, audio frames, dynamic label, DL Plus tags, slideshow
+  and announcements). Found services carry the subchannel bitrate and ID of the primary audio
+  component and their announcement support (flags and clusters). Reception reports the channel
+  error rate alongside the antenna level.
 - `CMakeLists.txt`: build script for the Android NDK.
 
 ## Changed
@@ -80,7 +81,15 @@ To see the exact changes, diff `src/` against `omriusb/src/main/cpp` at the comm
   the device's notification interface (`UsbTunerDevice::announcementSupport()` and
   `announcementSwitched()`).
 
+- `getAntennaLevel()` passes the MSC channel error rate it computes to
+  `UsbTunerDevice::receptionStatistics()` as well as the antenna level.
+
 `platformspecific/android/dabusbtunerinput.h`: `startService` takes a `DabServiceLink`.
+
+`dynamiclabeldecoder.cpp`: DL Plus tags are read only while three bytes remain before the CRC,
+and a tag's text is taken only if its markers fall inside the label. The markers count characters,
+so they are converted to byte offsets for UCS-2 and UTF-8 labels. Before, a malformed or
+multi-byte label read past the end of the data.
 
 `fig_00_ext_21.cpp`: FIG 0/21 parsing checks every broadcast length against the data left. It
 skips the frequency list of an R&M type it does not handle and stops reading an FI list at a

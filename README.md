@@ -4,8 +4,8 @@ An Android radio player, currently DAB/DAB+ via USB tuner sticks: Kotlin, single
 `com.iamburny.waveband`.
 
 Built for a landscape car head unit (1280×720, 160 dpi, steering-wheel media buttons). The UI is
-Jetpack Compose with a nav rail and four screens; stations, favourites, presets and settings are
-saved on the device. DAB decoding sits behind the `DabBackend` interface, which has two
+Jetpack Compose with a nav rail and five screens; stations, favourites, presets, song history and
+settings are saved on the device. DAB decoding sits behind the `DabBackend` interface, which has two
 implementations:
 
 - `OmriDabBackend` drives the USB stick through IRT's [omri-usb](https://github.com/hradio/omri-usb)
@@ -14,9 +14,10 @@ implementations:
   DAB (MPEG Layer II) by libmpg123, because Android has no Layer II decoder. The real-hardware path
   has not been tested yet; see [Testing on real hardware](#testing-on-real-hardware).
 - `StubDabBackend` is a demo tuner for debug builds (**Demo tuner** button). A scan "finds" 14
-  fictional stations on three ensembles; playing one gives silence with realistic metadata: bitrate,
-  stereo/mono, programme type, a changing dynamic label, generated slideshow images on some
-  stations, a varying signal, and a traffic announcement on the "Demo National" ensemble a minute
+  fictional stations on three ensembles; playing one gives a demo chord (so the visualisers move)
+  with realistic metadata: bitrate, stereo/mono, programme type, a changing dynamic label with
+  artist/title tags on its songs, generated slideshow images on some stations, a varying signal and
+  error rate, and a traffic announcement on the "Demo National" ensemble a minute
   after you tune to it (then every three minutes).
 
 ## Screens
@@ -24,6 +25,8 @@ implementations:
 - **Playing**: DAB/DAB+ badge, ensemble and block, bitrate and stereo/mono, signal bars; the DAB
   slideshow image (when the station sends one and **Slideshow images** is on) or the station's
   monogram; preset number and programme type, station name, dynamic label (DLS), favourite toggle.
+  Tapping the artwork steps through the visualisers and back, and tapping the signal bars opens the
+  signal details (see [DAB extras](#dab-extras)).
   Transport: previous/next saved station (in the station list's current order, wrapping round),
   seek down/up to the first station of the previous/next ensemble, play/pause. Below, presets 1–6:
   tap to play, tap an empty slot or long-press any slot to save the current station. Without a
@@ -41,6 +44,10 @@ implementations:
   frequency. Tap plays, switching source if needed; long-press saves what's playing, an empty tile
   saves on tap. **Edit** shows a clear button on each preset; tapping a tile then saves the current station
   there.
+- **History**: songs heard on DAB stations that send the artist and title, newest first and
+  grouped by day (Today, Yesterday, then the date), with the time, station and logo. Tap a song to
+  search for it on YouTube (the YouTube app if installed, otherwise the browser). **Clear history**
+  asks for a second tap.
 - **Settings**: full Band III scan (5A–13F) with progress and a cancel button; traffic
   announcements; slideshow images; station logos; display mode (Auto follows the system's night mode, which head
   units usually switch with the headlights; Day; Night); accent colour; region (United Kingdom,
@@ -53,11 +60,33 @@ Station logos come from the broadcasters through RadioDNS when the device is onl
 Behaviour). Stations without one get a generated monogram (initials on a colour derived from the
 service ID).
 
+## DAB extras
+
+These work on DAB only, because FM/AM audio and metadata go through the head unit's MCU rather than
+Android; on FM/AM they are hidden.
+
+- **Visualisers**: tapping the artwork steps through Artwork → Spectrum bars → Oscilloscope → VU
+  meters → Radial spectrum → Waterfall → Artwork, showing the mode's name briefly. The choice is
+  remembered. The views follow the audio leaving the speaker now (compensating for the audio
+  buffer), so they keep time with what you hear, and they stop when paused or off screen.
+  - *Spectrum bars*: 32 log-spaced bands from 40 Hz to 16 kHz with peak caps.
+  - *Oscilloscope*: the waveform, triggered so a steady note stands still.
+  - *VU meters*: left and right needles with 300 ms ballistics (0 VU is 14 dB below a full-scale
+    sine) and a PEAK light at −1 dBFS.
+  - *Radial spectrum*: bars round the station logo, which pulses with the bass.
+  - *Waterfall*: a scrolling spectrogram, newest at the top, in the accent colour.
+- **Song history**: built from DL Plus artist and title tags. A song is logged once it has played
+  for 10 seconds on a playing station outside a traffic announcement, unless it is the song last
+  logged on that station. The newest 1000 are kept.
+- **Signal details**: a quality gauge (0–100, from the tuner's channel error rate) with a verdict,
+  the error rate, the share of audio lost (dropouts), the ensemble and block, and a graph of the
+  last two minutes, which restarts when you retune. Useful for placing the aerial.
+
 ## Behaviour
 
 - **Persistence**: stations, favourites and presets are kept in a Room database
   (`stations.db`), per tuner origin (USB stick or demo tuner), so demo stations never mix with real
-  ones. Settings and the last station are kept in DataStore (`settings` preferences).
+  ones. The song history is kept in the same database. Settings and the last station are kept in DataStore (`settings` preferences).
 - **Start-up**: if a supported stick is attached, the app connects to it (debug builds reopen the
   demo tuner if it was used last). When the tuner is ready, the app scans automatically if there
   are no saved stations, and otherwise resumes the last station.
@@ -102,8 +131,13 @@ app/src/main/java/com/iamburny/waveband/
   usb/UsbTunerManager.kt    device lookup, permission requests, detach events
   playback/DabPlaybackService.kt  Media3 MediaSessionService (foreground, mediaPlayback)
   playback/DabPlayer.kt     SimpleBasePlayer mapping session commands (incl. skip next/previous) to the RadioController
-  playback/AudioTrackSink.kt PCM -> AudioTrack
-  ui/                       Compose UI: MainActivity, app shell and nav rail, the four screens, theme
+  playback/AudioTrackSink.kt PCM -> AudioTrack, feeding SpectrumTap while a visualiser is showing
+  playback/SpectrumTap.kt   recent left/right audio, aligned to what is playing now
+  playback/SpectrumAnalyser.kt  FFT and log-spaced bands
+  playback/Visualisation.kt band smoothing, oscilloscope trigger and VU meter maths
+  fm/                       the head unit's FM/AM tuner (vendor service binder, audio focus)
+  ui/                       Compose UI: MainActivity, app shell and nav rail, the five screens, signal
+                            details (SignalScreen.kt), visualisers (Visualisers.kt), theme
                             (Manrope, night/day colours)
 app/src/main/cpp/           JNI bridge (libdabtuner_jni.so) to the omri-usb C API and libmpg123
 third_party/omri-usb/       omri-usb native sources (LGPL-2.1, modified; see MODIFICATIONS.md)
@@ -169,6 +203,11 @@ What to look for in logcat:
   `Ensemble collect finished` and services appearing in the list.
 - When playing: `Starting SrvComp`, then the status changes to `playing`. If a DAB+ station is
   silent, check for `AudioPipeline` decoder errors. For an MP2 station, look for `mpg123` warnings.
+
+Then check the DAB extras: the History tab fills on a station that sends DL Plus tags (many Global
+and Bauer stations do), the signal details' error rate rises when you move or disconnect the
+aerial, the visualisers keep time with the beat, and the VU needles sit around 0 on normal
+programme.
 
 ## Third-party licences
 
